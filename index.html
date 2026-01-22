@@ -17,8 +17,11 @@
       </div>
 
       <div class="header-actions">
-        <button id="signInBtn" class="btn btn-ghost" type="button">Sign in</button>
-        <button id="signUpBtn" class="btn btn-ghost" type="button">Sign up</button>
+        <!-- Auth sahifasiga o'tkazamiz -->
+        <p><a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
+        <a id="signUpBtn" class="btn btn-ghost" href="./auth.html">Sign up</a></p>
+
+        <!-- Sign out tugmasi app.js orqali ko'rsatiladi -->
         <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
 
         <button id="resetBtn" class="btn btn-ghost" title="Custom local cache ni tozalash" type="button">
@@ -26,36 +29,6 @@
         </button>
       </div>
     </header>
-
-    <!-- Auth Modal -->
-    <div id="authModal" class="modal hidden" aria-hidden="true">
-      <div class="modal-backdrop" id="authBackdrop"></div>
-      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Authentication">
-        <div class="modal-header">
-          <h2 id="authTitle">Sign in</h2>
-          <button id="authClose" class="btn btn-ghost" type="button">Close</button>
-        </div>
-
-        <form id="authForm" class="form">
-          <label class="label">
-            Email
-            <input id="authEmail" class="input" type="email" placeholder="you@example.com" required />
-          </label>
-
-          <label class="label">
-            Password
-            <input id="authPassword" class="input" type="password" placeholder="••••••••" required />
-          </label>
-
-          <button id="authSubmit" class="btn btn-primary" type="submit">Continue</button>
-          <p id="authStatus" class="status muted" aria-live="polite"></p>
-
-          <p class="muted small">
-            Eslatma: Supabase sozlamasiga qarab email confirmation talab qilinishi mumkin.
-          </p>
-        </form>
-      </div>
-    </div>
 
     <main class="container grid">
       <!-- LEFT: add + controls -->
