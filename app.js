@@ -50,14 +50,14 @@ const cardsList = el("cardsList");
 
 let sessionUser = null;
 
-let extractedWords = []; // array of strings
-let chats = [];          // [{id,title,created_at}]
+let extractedWords = [];
+let chats = [];
 let activeChatId = null;
-let activeCards = [];    // [{id,word,translation,example}]
+let activeCards = [];
 let idx = 0;
 let showAnswer = false;
 
-// Simple EN stopwords (minimal)
+// Minimal stopwords
 const STOP = new Set([
   "the","a","an","and","or","but","to","of","in","on","at","for","with","from","by","as",
   "is","are","was","were","be","been","being","it","this","that","these","those","i","you","he","she","they","we",
@@ -276,7 +276,6 @@ async function refreshSession() {
 
   setUIAuthed(!!sessionUser);
 
-  // reset UI state
   extractedWords = [];
   renderWords();
   setOcrStatus("");
@@ -313,7 +312,6 @@ async function loadChats() {
   chats = data || [];
   renderChats();
 
-  // auto open first chat
   if (chats.length > 0) {
     await openChat(chats[0].id);
   }
@@ -352,7 +350,6 @@ async function openChat(chatId) {
 }
 
 async function deleteChat(chatId) {
-  // Delete chat -> cards cascade
   const { error } = await supabase
     .from("vocab_chats")
     .delete()
@@ -363,9 +360,12 @@ async function deleteChat(chatId) {
     return;
   }
 
-  // refresh list
   await loadChats();
 }
+
+/* =========================
+   OCR FIX: resize + correct worker init
+   ========================= */
 
 function extractWordsFromText(text) {
   const raw = (text || "").toLowerCase();
@@ -374,7 +374,6 @@ function extractWordsFromText(text) {
     .map((w) => w.replace(/^'+|'+$/g, ""))
     .filter((w) => w.length >= 3 && !STOP.has(w));
 
-  // unique
   const set = new Set();
   const out = [];
   for (const w of cleaned) {
@@ -383,42 +382,105 @@ function extractWordsFromText(text) {
       out.push(w);
     }
   }
-  return out.slice(0, 120); // safety cap
+  return out.slice(0, 120);
+}
+
+// Mobil uchun rasmni kichraytirib beramiz (OCR tezlashadi, RAM kam yeydi)
+async function downscaleImageToBlob(file, maxSide = 1400, quality = 0.85) {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+
+  try {
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = url;
+    });
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+
+    if (!w || !h) return file;
+
+    const scale = Math.min(1, maxSide / Math.max(w, h));
+    const nw = Math.round(w * scale);
+    const nh = Math.round(h * scale);
+
+    // Agar rasm allaqachon kichik bo‘lsa, qaytaramiz
+    if (scale >= 0.98) return file;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = nw;
+    canvas.height = nh;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, nw, nh);
+
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob(
+        (b) => resolve(b),
+        "image/jpeg",
+        quality
+      );
+    });
+
+    if (!blob) return file;
+
+    return new File([blob], "ocr.jpg", { type: "image/jpeg" });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function runOcrOnFile(file) {
+  // 1) Resize
+  setOcrStatus("Rasm tayyorlanmoqda...");
+  const processed = await downscaleImageToBlob(file);
+
+  // 2) Tesseract init (v5 proper)
   setOcrStatus("OCR boshlanmoqda...");
 
-  const worker = await Tesseract.createWorker("eng");
+  const worker = await Tesseract.createWorker({
+    logger: (m) => {
+      if (m?.status && typeof m?.progress === "number") {
+        const pct = Math.round(m.progress * 100);
+        setOcrStatus(`${m.status}... ${pct}%`);
+      } else if (m?.status) {
+        setOcrStatus(`${m.status}...`);
+      }
+    }
+  });
+
   try {
+    await worker.load();
+    await worker.loadLanguage("eng");
+    await worker.initialize("eng");
+
+    // Helpful for book photos
     await worker.setParameters({
-      tessedit_char_whitelist: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' ",
+      tessedit_pageseg_mode: "6",
     });
 
-    const { data } = await worker.recognize(file, undefined, {
-      logger: (m) => {
-        if (m?.status && typeof m?.progress === "number") {
-          const pct = Math.round(m.progress * 100);
-          setOcrStatus(`${m.status}... ${pct}%`);
-        }
-      },
-    });
-
+    const { data } = await worker.recognize(processed);
     const text = data?.text || "";
-    const words = extractWordsFromText(text);
 
+    const words = extractWordsFromText(text);
     extractedWords = words;
     renderWords();
 
     setOcrStatus(`OCR tugadi. Topildi: ${words.length} ta so‘z.`);
+  } catch (e) {
+    setOcrStatus(`OCR xato: ${e?.message || "unknown"}`);
   } finally {
     await worker.terminate();
   }
 }
 
+/* =========================
+   Translate + DB save
+   ========================= */
+
 async function translateWordENtoUZ(word) {
-  // MyMemory free translation (no key)
-  // Sends the word text (not image)
   const q = encodeURIComponent(word);
   const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
 
@@ -432,7 +494,6 @@ async function translateWordENtoUZ(word) {
 }
 
 async function translateWordsBatch(words) {
-  // sequential with light throttling
   const out = [];
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
@@ -440,17 +501,15 @@ async function translateWordsBatch(words) {
     try {
       const tr = await translateWordENtoUZ(w);
       out.push({ word: w, translation: tr });
-    } catch (e) {
+    } catch {
       out.push({ word: w, translation: "(tarjima xato)" });
     }
-    // small delay to reduce rate-limit risk
     await new Promise((r) => setTimeout(r, 120));
   }
   return out;
 }
 
 async function createChatWithCards(title, wordPairs) {
-  // Create chat (trigger enforces max 2 per user)
   const { data: chatData, error: chatErr } = await supabase
     .from("vocab_chats")
     .insert({
@@ -464,7 +523,6 @@ async function createChatWithCards(title, wordPairs) {
 
   const chatId = chatData.id;
 
-  // Insert cards
   const rows = wordPairs.map((p) => ({
     chat_id: chatId,
     user_id: sessionUser.id,
@@ -507,11 +565,7 @@ runOcrBtn.addEventListener("click", async () => {
     setOcrStatus("Iltimos rasm tanlang.");
     return;
   }
-  try {
-    await runOcrOnFile(file);
-  } catch (e) {
-    setOcrStatus(`OCR xato: ${e?.message || "unknown"}`);
-  }
+  await runOcrOnFile(file);
 });
 
 clearScanBtn.addEventListener("click", () => {
@@ -544,7 +598,6 @@ createChatBtn.addEventListener("click", async () => {
     return;
   }
 
-  // local client-side limit hint (real limit is DB trigger)
   if (chats.length >= 2) {
     setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chirib, keyin yarating.");
     return;
@@ -554,17 +607,15 @@ createChatBtn.addEventListener("click", async () => {
   const title = titleRaw || `Reading chat ${new Date().toLocaleString()}`;
 
   try {
-    setCreateStatus(`Tarjima boshlanmoqda (EN→UZ)...`);
+    setCreateStatus("Tarjima boshlanmoqda (EN→UZ)...");
     const pairs = await translateWordsBatch(extractedWords);
 
     setCreateStatus("Chat yaratilmoqda...");
     const newChat = await createChatWithCards(title, pairs);
 
-    // refresh chats list & open new chat
     await loadChats();
     await openChat(newChat.id);
 
-    // clear
     extractedWords = [];
     renderWords();
     imageInput.value = "";
@@ -598,7 +649,6 @@ nextBtn.addEventListener("click", () => {
   renderFlashcard();
 });
 
-// Export active chat cards as JSON
 exportBtn.addEventListener("click", () => {
   if (!sessionUser) {
     setCreateStatus("Export uchun Sign in qiling.");
@@ -626,7 +676,6 @@ exportBtn.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// Import: creates a new chat (counts toward limit)
 importBtn.addEventListener("click", () => {
   if (!sessionUser) {
     setCreateStatus("Import uchun Sign in qiling.");
@@ -684,14 +733,12 @@ importFile.addEventListener("change", async () => {
  *  Init
  *  ========================= */
 (async function init() {
-  // initial UI
   extractedWords = [];
   renderWords();
   renderChats();
   renderCardsList();
   renderFlashcard();
 
-  // auth state changes
   supabase.auth.onAuthStateChange(async () => {
     await refreshSession();
   });
