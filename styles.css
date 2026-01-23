@@ -107,9 +107,14 @@ p { margin: 0; }
   cursor: pointer;
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
   user-select: none;
+  text-decoration: none; /* underline yo'q */
 }
 .btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,0.18); }
 .btn:active { transform: translateY(0px); }
+
+a.btn, a.btn:hover, a.btn:focus, a.btn:active {
+  text-decoration: none; /* underline yo'q (A-variant linklar uchun) */
+}
 
 .btn-primary {
   background: linear-gradient(135deg, rgba(79,70,229,1), rgba(99,102,241,1));
@@ -193,35 +198,4 @@ p { margin: 0; }
   max-height: 220px;
   overflow: auto;
   white-space: pre-wrap;
-}
-
-/* ===== Modal ===== */
-.modal {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  z-index: 50;
-}
-.modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-}
-.modal-card {
-  position: relative;
-  width: min(460px, calc(100% - 32px));
-  background: rgba(17, 24, 39, 0.96);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(10px);
-}
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
 }

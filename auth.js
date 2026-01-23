@@ -1,12 +1,12 @@
 /* ===========
-  auth.js (Mobile-first Auth page)
-  - Default: Sign up view
-  - User has account => switches to Sign in
-  - If already logged in => redirect to index.html
+  auth.js (A-variant)
+  - Default: Sign up
+  - Account bo‘lsa: Sign in tab
+  - Login bo‘lsa: index.html ga avtomatik redirect
 =========== */
 
-const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -42,22 +42,23 @@ function clearStatuses() {
   setStatus(signInStatus, "");
 }
 
+function goHome() {
+  // Doim bir xil hostda qaytadi (production URL bo‘lsa ideal)
+  window.location.href = `${window.location.origin}/index.html`;
+}
+
 function setMode(mode /* 'up' | 'in' */) {
   clearStatuses();
 
   if (mode === "in") {
-    // tabs
     tabSignIn.classList.add("active");
     tabSignUp.classList.remove("active");
 
-    // forms
     signInForm.classList.remove("hidden");
     signUpForm.classList.add("hidden");
 
     authTopLine.textContent = "Kirish";
     hintLine.textContent = "Hisobingiz yo‘q bo‘lsa, Sign up ni bosing.";
-
-    // focus
     signInEmail.focus();
   } else {
     tabSignUp.classList.add("active");
@@ -68,7 +69,6 @@ function setMode(mode /* 'up' | 'in' */) {
 
     authTopLine.textContent = "Ro‘yxatdan o‘tish";
     hintLine.textContent = "Hisobingiz bo‘lsa, Sign in ni bosing.";
-
     signUpEmail.focus();
   }
 }
@@ -76,24 +76,19 @@ function setMode(mode /* 'up' | 'in' */) {
 /* Default: Sign up */
 setMode("up");
 
-/* Tab handlers */
-tabSignUp.addEventListener("click", () => setMode("up"));
-tabSignIn.addEventListener("click", () => setMode("in"));
-
-/* If already logged in => go index */
+/* Agar session bo‘lsa, darhol indexga */
 (async function boot() {
   try {
     const { data } = await supabase.auth.getSession();
-    const user = data?.session?.user;
-    if (user) {
-      window.location.href = "./index.html";
-    }
+    if (data?.session?.user) goHome();
   } catch {
     // ignore
   }
 })();
 
-/* Sign up */
+tabSignUp.addEventListener("click", () => setMode("up"));
+tabSignIn.addEventListener("click", () => setMode("in"));
+
 signUpForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -104,28 +99,24 @@ signUpForm.addEventListener("submit", async (e) => {
   setStatus(signUpStatus, "Account yaratilmoqda...");
 
   const { error } = await supabase.auth.signUp({ email, password });
-
   if (error) {
     setStatus(signUpStatus, `Xato: ${error.message}`);
     return;
   }
 
-  // Supabase settingiga qarab: email confirm kerak bo‘lishi mumkin
-  setStatus(signUpStatus, "Account created ✅ (Agar confirmation yoqilgan bo‘lsa emailni tasdiqlang.)");
-
-  // Ko‘p holatda user darhol session oladi; shunda indexga yuboramiz
+  // Session bo‘lsa darhol indexga, bo‘lmasa confirmation yoq bo‘lishi mumkin
   const { data } = await supabase.auth.getSession();
   if (data?.session?.user) {
-    window.location.href = "./index.html";
+    setStatus(signUpStatus, "Account created ✅ Redirecting...");
+    goHome();
   } else {
-    // session bo‘lmasa, userga sign in’ga o‘tishni qulay qilamiz
+    setStatus(signUpStatus, "Account created ✅ (Email confirmation yoqilgan bo‘lishi mumkin). Endi Sign in qiling.");
     setMode("in");
     signInEmail.value = email;
     signInPassword.focus();
   }
 });
 
-/* Sign in */
 signInForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -136,12 +127,11 @@ signInForm.addEventListener("submit", async (e) => {
   setStatus(signInStatus, "Kirilmoqda...");
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-
   if (error) {
     setStatus(signInStatus, `Xato: ${error.message}`);
     return;
   }
 
   setStatus(signInStatus, "Signed in ✅ Redirecting...");
-  window.location.href = "./index.html";
+  goHome();
 });

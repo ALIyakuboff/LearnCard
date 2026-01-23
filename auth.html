@@ -6,7 +6,6 @@
     <title>Vocab Cards — Auth</title>
     <link rel="stylesheet" href="./styles.css" />
 
-    <!-- Auth page uchun kichik qo‘shimcha style (styles.css’ga tegmaymiz) -->
     <style>
       .auth-wrap {
         width: min(520px, calc(100% - 32px));
@@ -26,9 +25,6 @@
         background: linear-gradient(135deg, rgba(79,70,229,1), rgba(99,102,241,1));
         border-color: rgba(79,70,229,0.45);
       }
-      .auth-card {
-        width: 100%;
-      }
       .auth-footer {
         margin-top: 12px;
         display: flex;
@@ -36,9 +32,7 @@
         gap: 10px;
         flex-wrap: wrap;
       }
-      .auth-footer a {
-        text-decoration: none;
-      }
+      .auth-footer a { text-decoration: none; }
     </style>
   </head>
 
@@ -58,15 +52,13 @@
     </header>
 
     <main class="auth-wrap">
-      <!-- Tabs -->
       <div class="auth-tabs">
         <button id="tabSignUp" class="btn auth-tab active" type="button">Sign up</button>
         <button id="tabSignIn" class="btn auth-tab" type="button">Sign in</button>
       </div>
 
-      <!-- Panel -->
-      <section class="panel auth-card">
-        <!-- SIGN UP (default visible) -->
+      <section class="panel">
+        <!-- SIGN UP (default) -->
         <form id="signUpForm" class="form">
           <h2 style="margin-bottom: 6px;">Sign up</h2>
 
@@ -117,7 +109,6 @@
       <p>Login bo‘lgach, avtomatik index.html’ga qaytasiz.</p>
     </footer>
 
-    <!-- Supabase JS (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./auth.js"></script>
   </body>

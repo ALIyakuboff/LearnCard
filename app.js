@@ -1,23 +1,16 @@
 /* ===========
-  Vocab Cards
-  - Tayyor darajali decklar (seed)
-  - Sign in / Sign up (Supabase Auth)
-  - Foydalanuvchi qo‘shgan lug‘atlar Supabase DB’da saqlanadi
-  - Card ustiga bosilganda flip (sizdagi UX)
-  - Reset tugmasi: faqat local cache tozalaydi (DB o‘chmaydi)
+  app.js (A-variant)
+  - Index sahifada auth linklar (auth.html) bor, modal yo‘q
+  - Session bo‘lsa userLine’da email ko‘rsatadi
+  - Custom cards Supabase DB’da saqlanadi va faqat egasi ko‘radi (RLS)
 =========== */
 
-/** =========================
- *  0) Supabase config
- *  ========================= */
-const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/** =========================
- *  1) Seed decks (tarjimasiz)
- *  ========================= */
+/* ===== Seed decks ===== */
 const seedDecks = {
   beginner: [
     { word: "family", meaning: "oila", example: "My family is very supportive.", tag: "beginner" },
@@ -41,26 +34,12 @@ const seedDecks = {
   ],
 };
 
-/** =========================
- *  2) DOM helpers
- *  ========================= */
 const el = (id) => document.getElementById(id);
 
 const userLine = el("userLine");
-
-const signInBtn = el("signInBtn");
-const signUpBtn = el("signUpBtn");
-const signOutBtn = el("signOutBtn");
-
-const authModal = el("authModal");
-const authBackdrop = el("authBackdrop");
-const authClose = el("authClose");
-const authTitle = el("authTitle");
-const authForm = el("authForm");
-const authEmail = el("authEmail");
-const authPassword = el("authPassword");
-const authStatus = el("authStatus");
-const authSubmit = el("authSubmit");
+const signInBtn = el("signInBtn");   // <a>
+const signUpBtn = el("signUpBtn");   // <a>
+const signOutBtn = el("signOutBtn"); // <button>
 
 const addForm = el("addForm");
 const wordInput = el("wordInput");
@@ -93,9 +72,6 @@ const importBtn = el("importBtn");
 const importFile = el("importFile");
 const resetBtn = el("resetBtn");
 
-/** =========================
- *  3) App state
- *  ========================= */
 let sessionUser = null;
 
 let showAnswer = false;
@@ -104,73 +80,34 @@ let currentMode = "front";
 let cards = [];
 let idx = 0;
 
-// Custom cards DB’dan keladi
 let customCards = [];
 
-// Sizdagi “Reset” matniga mos: local cache
 const CACHE_KEY = "vocab_cards_custom_cache_v1";
 
-/** =========================
- *  4) Utilities
- *  ========================= */
-function safeTrim(s) {
-  return (s || "").trim();
-}
-function normalizeWord(w) {
-  return safeTrim(w).toLowerCase();
-}
+function safeTrim(s) { return (s || "").trim(); }
+function normalizeWord(w) { return safeTrim(w).toLowerCase(); }
 
 function setStatus(msg) {
   statusEl.className = "status muted";
   statusEl.textContent = msg;
 }
-function setAuthStatus(msg) {
-  authStatus.className = "status muted";
-  authStatus.textContent = msg;
-}
-
-function openAuthModal(mode /* 'in' | 'up' */) {
-  authModal.classList.remove("hidden");
-  authModal.setAttribute("aria-hidden", "false");
-  authEmail.value = "";
-  authPassword.value = "";
-  setAuthStatus("");
-
-  if (mode === "up") {
-    authTitle.textContent = "Sign up";
-    authSubmit.textContent = "Create account";
-    authForm.dataset.mode = "up";
-  } else {
-    authTitle.textContent = "Sign in";
-    authSubmit.textContent = "Sign in";
-    authForm.dataset.mode = "in";
-  }
-  authEmail.focus();
-}
-
-function closeAuthModal() {
-  authModal.classList.add("hidden");
-  authModal.setAttribute("aria-hidden", "true");
-}
 
 function setUIAuthed(isAuthed) {
   if (isAuthed) {
+    signOutBtn.classList.remove("hidden");
     signInBtn.classList.add("hidden");
     signUpBtn.classList.add("hidden");
-    signOutBtn.classList.remove("hidden");
     addForm.querySelectorAll("input,select,button").forEach((x) => (x.disabled = false));
   } else {
+    signOutBtn.classList.add("hidden");
     signInBtn.classList.remove("hidden");
     signUpBtn.classList.remove("hidden");
-    signOutBtn.classList.add("hidden");
     addForm.querySelectorAll("input,select,button").forEach((x) => (x.disabled = true));
   }
 }
 
 function cacheSet(list) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(list));
-  } catch {}
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch {}
 }
 function cacheGet() {
   try {
@@ -178,19 +115,13 @@ function cacheGet() {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 function cacheClear() {
-  try {
-    localStorage.removeItem(CACHE_KEY);
-  } catch {}
+  try { localStorage.removeItem(CACHE_KEY); } catch {}
 }
 
-/** =========================
- *  5) Deck building & UI render
- *  ========================= */
+/* ===== Deck logic ===== */
 function getAllSeed() {
   return [
     ...seedDecks.beginner,
@@ -231,6 +162,7 @@ function renderCustomList() {
     const ex = c.example ? ` | ex: ${c.example}` : "";
     return `${i + 1}. ${c.word} → ${c.meaning} (${c.tag})${ex}`;
   });
+
   customListEl.textContent = lines.join("\n");
 }
 
@@ -253,7 +185,6 @@ function pickFrontBack(card) {
       back = card.word;
     }
   }
-
   return { front, back };
 }
 
@@ -307,17 +238,11 @@ function flip() {
   renderCard();
 }
 
-/** =========================
- *  6) Supabase DB operations
- *  =========================
- *  Kerakli table: public.vocab_cards
- *  ustunlar: id, user_id, word, meaning, example, tag, created_at
- *  RLS yoqilgan bo‘lishi shart.
- */
+/* ===== Supabase DB ops (custom cards) ===== */
 async function dbLoadCustomCards() {
   if (!sessionUser) return;
 
-  // avval cache ko‘rsatamiz (tez UI)
+  // cache first
   const cached = cacheGet();
   if (cached.length > 0) {
     customCards = cached;
@@ -325,7 +250,6 @@ async function dbLoadCustomCards() {
     setDeck(deckSelect.value);
   }
 
-  // keyin DB’dan yangilaymiz
   const { data, error } = await supabase
     .from("vocab_cards")
     .select("id, word, meaning, example, tag, created_at")
@@ -377,9 +301,7 @@ async function dbInsertCard(card) {
   };
 }
 
-/** =========================
- *  7) Auth flows
- *  ========================= */
+/* ===== Auth state ===== */
 async function refreshSession() {
   const { data } = await supabase.auth.getSession();
   sessionUser = data?.session?.user || null;
@@ -398,58 +320,15 @@ async function refreshSession() {
   }
 }
 
-async function signIn(email, password) {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
-}
-
-async function signUp(email, password) {
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) throw error;
-}
-
-async function signOut() {
+async function doSignOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
 
-/** =========================
- *  8) Event listeners
- *  ========================= */
-signInBtn.addEventListener("click", () => openAuthModal("in"));
-signUpBtn.addEventListener("click", () => openAuthModal("up"));
-authClose.addEventListener("click", closeAuthModal);
-authBackdrop.addEventListener("click", closeAuthModal);
-
-authForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  const email = safeTrim(authEmail.value);
-  const password = safeTrim(authPassword.value);
-  if (!email || !password) return;
-
-  setAuthStatus("Processing...");
-
-  try {
-    const mode = authForm.dataset.mode || "in";
-    if (mode === "up") {
-      await signUp(email, password);
-      setAuthStatus("Account created. Agar email confirmation yoqilgan bo‘lsa, emailingizni tasdiqlang.");
-    } else {
-      await signIn(email, password);
-      setAuthStatus("Signed in ✅");
-      closeAuthModal();
-    }
-
-    await refreshSession();
-  } catch (err) {
-    setAuthStatus(`Xato: ${err?.message || "unknown error"}`);
-  }
-});
-
+/* ===== Events ===== */
 signOutBtn.addEventListener("click", async () => {
   try {
-    await signOut();
+    await doSignOut();
   } catch (err) {
     setStatus(`Sign out xato: ${err?.message || "unknown error"}`);
   } finally {
@@ -491,8 +370,7 @@ nextBtn.addEventListener("click", () => {
   renderCard();
 });
 
-// Card click + keyboard support
-cardEl.addEventListener("click", () => flip());
+cardEl.addEventListener("click", flip);
 cardEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
@@ -500,7 +378,7 @@ cardEl.addEventListener("keydown", (e) => {
   }
 });
 
-// Add card: DB ga yoziladi (faqat sign in bo‘lsa)
+// Add card (DB)
 addForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -516,10 +394,9 @@ addForm.addEventListener("submit", async (e) => {
 
   if (!rawWord || !meaning) return;
 
-  // Duplikat (client-side)
+  // duplikat (client)
   const wn = normalizeWord(rawWord);
-  const dup = customCards.some((c) => normalizeWord(c.word) === wn);
-  if (dup) {
+  if (customCards.some((c) => normalizeWord(c.word) === wn)) {
     setStatus("Bu so‘z custom ro‘yxatda bor. (Duplikat qo‘shilmadi)");
     return;
   }
@@ -539,15 +416,13 @@ addForm.addEventListener("submit", async (e) => {
     renderCustomList();
 
     const current = deckSelect.value;
-    if (current === "custom" || current === "all") {
-      setDeck(current);
-    }
+    if (current === "custom" || current === "all") setDeck(current);
   } catch (err) {
     setStatus(`Saqlash xato: ${err?.message || "unknown error"}`);
   }
 });
 
-// Export/Import: customCards bilan
+// Export
 exportBtn.addEventListener("click", () => {
   if (!sessionUser) {
     setStatus("Export uchun Sign in qiling.");
@@ -566,6 +441,7 @@ exportBtn.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
+// Import
 importBtn.addEventListener("click", () => {
   if (!sessionUser) {
     setStatus("Import uchun Sign in qiling.");
@@ -603,15 +479,14 @@ importFile.addEventListener("change", async () => {
 
     for (const c of cleaned) {
       const wn = normalizeWord(c.word);
-      const exists = customCards.some((x) => normalizeWord(x.word) === wn);
-      if (exists) continue;
+      if (customCards.some((x) => normalizeWord(x.word) === wn)) continue;
 
       try {
         const inserted = await dbInsertCard(c);
         customCards.unshift(inserted);
         added++;
       } catch {
-        // bitta row xato bo‘lsa skip
+        // skip xato row
       }
     }
 
@@ -629,17 +504,15 @@ importFile.addEventListener("change", async () => {
   }
 });
 
-// Reset: faqat local cache (DB o‘chmaydi!)
+// Reset = local cache only
 resetBtn.addEventListener("click", () => {
   cacheClear();
   setStatus("Local cache tozalandi. (DB saqlanib qoladi)");
 });
 
-/** =========================
- *  9) Init
- *  ========================= */
+/* ===== Init ===== */
 (async function init() {
-  // login bo‘lmaguncha addForm disable
+  // Login bo‘lmaguncha addForm disable
   setUIAuthed(false);
   renderCustomList();
 
@@ -647,7 +520,6 @@ resetBtn.addEventListener("click", () => {
   currentMode = modeSelect.value;
   setDeck(currentDeck);
 
-  // auth state listener
   supabase.auth.onAuthStateChange(async () => {
     await refreshSession();
   });
