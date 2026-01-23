@@ -5,25 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vocab Cards — Auth</title>
     <link rel="stylesheet" href="./styles.css" />
-
-    <style>
-      .auth-wrap { width: min(520px, calc(100% - 32px)); margin: 18px auto 0 auto; }
-      .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-      .auth-tab { text-align: center; font-weight: 650; }
-      .auth-tab.active {
-        background: linear-gradient(135deg, rgba(79,70,229,1), rgba(99,102,241,1));
-        border-color: rgba(79,70,229,0.45);
-      }
-      .auth-footer { margin-top: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-      .auth-footer a { text-decoration: none; }
-    </style>
   </head>
 
   <body>
     <header class="container header">
       <div class="brand">
         <div class="logo">VC</div>
-        <div>
+        <div class="brand-text">
           <h1>Vocab Cards</h1>
           <p class="muted" id="authTopLine">Ro‘yxatdan o‘tish</p>
         </div>
@@ -34,7 +22,7 @@
       </div>
     </header>
 
-    <main class="auth-wrap">
+    <main class="container auth-wrap">
       <div class="auth-tabs">
         <button id="tabSignUp" class="btn auth-tab active" type="button">Sign up</button>
         <button id="tabSignIn" class="btn auth-tab" type="button">Sign in</button>
@@ -56,6 +44,10 @@
 
           <button class="btn btn-primary" type="submit">Create account</button>
           <p id="signUpStatus" class="status muted" aria-live="polite"></p>
+
+          <p class="muted small">
+            Agar email confirmation yoqilgan bo‘lsa, xat keladi — tasdiqlang.
+          </p>
         </form>
 
         <form id="signInForm" class="form hidden">

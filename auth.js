@@ -1,11 +1,16 @@
 /* ===========
-  auth.js (A-variant, robust)
-  - UI tab switch ALWAYS works (even if Supabase config is wrong)
-  - Sign up/in works when SUPABASE_URL + SUPABASE_ANON_KEY are correct
-  - Redirect after login -> index.html on same host
+  auth.js
+  - Default: Sign up tab
+  - Switch to Sign in
+  - After success -> index.html (same host)
 =========== */
 
 document.addEventListener("DOMContentLoaded", () => {
+  const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
   const el = (id) => document.getElementById(id);
 
   const authTopLine = el("authTopLine");
@@ -54,41 +59,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Default: Sign up
+  // default
   setMode("up");
-
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
-  // ===== Supabase init (safe) =====
-  const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
-
-  let supabaseClient = null;
-
-  try {
-    if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.includes("PASTE_")) {
-      throw new Error("Supabase URL/anon key qo‘yilmagan yoki noto‘g‘ri.");
-    }
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  } catch (e) {
-    setStatus(signUpStatus, `Xato: ${e.message}`);
-    setStatus(signInStatus, `Xato: ${e.message}`);
-    // UI baribir ishlaydi; auth funksiyalari esa ishlamaydi.
-    return;
-  }
-
-  // Agar allaqachon login bo‘lsa, indexga qaytar
+  // already logged in?
   (async () => {
-    try {
-      const { data } = await supabaseClient.auth.getSession();
-      if (data?.session?.user) goHome();
-    } catch {
-      // ignore
-    }
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) goHome();
   })();
 
-  // Sign up
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -98,12 +79,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setStatus(signUpStatus, "Account yaratilmoqda...");
 
-    const { error } = await supabaseClient.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/index.html`,
-      },
+      options: { emailRedirectTo: `${window.location.origin}/index.html` },
     });
 
     if (error) {
@@ -111,22 +90,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Session bo‘lsa darhol kirgan bo‘ladi
-    const { data } = await supabaseClient.auth.getSession();
+    const { data } = await supabase.auth.getSession();
     if (data?.session?.user) {
       setStatus(signUpStatus, "Account created ✅ Redirecting...");
       goHome();
-      return;
+    } else {
+      setStatus(signUpStatus, "Account created ✅ Endi Sign in qiling (yoki email tasdiqlash bo‘lishi mumkin).");
+      setMode("in");
+      signInEmail.value = email;
+      signInPassword.focus();
     }
-
-    // Session bo‘lmasa: email confirmation yoq bo‘lishi mumkin yoki boshqa policy
-    setStatus(signUpStatus, "Account created ✅ Endi Sign in qiling (yoki email tasdiqlash bo‘lishi mumkin).");
-    setMode("in");
-    signInEmail.value = email;
-    signInPassword.focus();
   });
 
-  // Sign in
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -136,8 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     setStatus(signInStatus, "Kirilmoqda...");
 
-    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setStatus(signInStatus, `Xato: ${error.message}`);
       return;

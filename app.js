@@ -1,397 +1,637 @@
 /* ===========
-  app.js (A-variant)
-  - Signed in bo'lsa headerda ko'rsatadi
-  - Custom cards Supabase DB’da (RLS: faqat egasi ko'radi)
+  app.js
+  - Mobile-first OCR in browser (no image upload/storage)
+  - Extract words -> EN->UZ translate -> save as Chat (max 2 per user)
+  - Each user sees only own chats/cards (RLS)
+  - Flashcard view per selected chat
 =========== */
 
 const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
-
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-const seedDecks = {
-  beginner: [
-    { word: "family", meaning: "oila", example: "My family is very supportive.", tag: "beginner" },
-    { word: "important", meaning: "muhim", example: "It is important to sleep well.", tag: "beginner" },
-    { word: "increase", meaning: "oshirmoq", example: "We need to increase productivity.", tag: "beginner" },
-  ],
-  intermediate: [
-    { word: "however", meaning: "biroq", example: "However, the results were different.", tag: "intermediate" },
-    { word: "benefit", meaning: "foyda", example: "Exercise brings many benefits.", tag: "intermediate" },
-    { word: "require", meaning: "talab qilmoq", example: "This job requires experience.", tag: "intermediate" },
-  ],
-  advanced: [
-    { word: "substantial", meaning: "sezilarli", example: "There was a substantial increase in sales.", tag: "advanced" },
-    { word: "mitigate", meaning: "yumshatmoq (salbiy ta’sirni)", example: "Policies can mitigate risk.", tag: "advanced" },
-    { word: "intricate", meaning: "murakkab", example: "The design is intricate and detailed.", tag: "advanced" },
-  ],
-  ielts: [
-    { word: "allocate", meaning: "ajratmoq (resurs/budjet)", example: "The government allocated funds to education.", tag: "ielts" },
-    { word: "decline", meaning: "pasayish / rad etish", example: "The number of visitors declined.", tag: "ielts" },
-    { word: "significant", meaning: "ahamiyatli", example: "There was a significant change.", tag: "ielts" },
-  ],
-};
 
 const el = (id) => document.getElementById(id);
 
 const userLine = el("userLine");
-const signInBtn = el("signInBtn");   // <a>
-const signUpBtn = el("signUpBtn");   // <a>
-const signOutBtn = el("signOutBtn"); // <button>
+const accountLabel = el("accountLabel");
+const signInBtn = el("signInBtn");
+const signUpBtn = el("signUpBtn");
+const signOutBtn = el("signOutBtn");
 
-const addForm = el("addForm");
-const wordInput = el("wordInput");
-const meaningInput = el("meaningInput");
-const exampleInput = el("exampleInput");
-const levelSelect = el("levelSelect");
-const statusEl = el("status");
+const imageInput = el("imageInput");
+const runOcrBtn = el("runOcrBtn");
+const clearScanBtn = el("clearScanBtn");
+const ocrStatus = el("ocrStatus");
 
-const deckSelect = el("deckSelect");
-const modeSelect = el("modeSelect");
-const shuffleBtn = el("shuffleBtn");
-const toggleAnswerBtn = el("toggleAnswerBtn");
+const wordsChips = el("wordsChips");
+const manualWord = el("manualWord");
+const addManualWordBtn = el("addManualWordBtn");
+const chatTitle = el("chatTitle");
+const createChatBtn = el("createChatBtn");
+const createStatus = el("createStatus");
 
-const totalCountEl = el("totalCount");
-const deckCountEl = el("deckCount");
+const chatList = el("chatList");
+
+const activeChatTitle = el("activeChatTitle");
+const activeChatMeta = el("activeChatMeta");
 
 const cardEl = el("card");
-const cardTagEl = el("cardTag");
 const frontTextEl = el("frontText");
 const backTextEl = el("backText");
 const exampleTextEl = el("exampleText");
 const cardBackEl = el("cardBack");
-
 const prevBtn = el("prevBtn");
 const nextBtn = el("nextBtn");
 
-const customListEl = el("customList");
 const exportBtn = el("exportBtn");
 const importBtn = el("importBtn");
 const importFile = el("importFile");
-const resetBtn = el("resetBtn");
+const cardsList = el("cardsList");
 
 let sessionUser = null;
-let customCards = [];
 
-let showAnswer = false;
-let currentDeck = "beginner";
-let currentMode = "front";
-let cards = [];
+let extractedWords = []; // array of strings
+let chats = [];          // [{id,title,created_at}]
+let activeChatId = null;
+let activeCards = [];    // [{id,word,translation,example}]
 let idx = 0;
+let showAnswer = false;
 
-const CACHE_KEY = "vocab_cards_custom_cache_v1";
+// Simple EN stopwords (minimal)
+const STOP = new Set([
+  "the","a","an","and","or","but","to","of","in","on","at","for","with","from","by","as",
+  "is","are","was","were","be","been","being","it","this","that","these","those","i","you","he","she","they","we",
+  "my","your","his","her","their","our","me","him","them","us","not","no","yes","do","does","did","done","have","has","had",
+]);
 
 function safeTrim(s) { return (s || "").trim(); }
-function normalizeWord(w) { return safeTrim(w).toLowerCase(); }
-
-function setStatus(msg) {
-  statusEl.className = "status muted";
-  statusEl.textContent = msg;
-}
+function setText(node, msg) { node.textContent = msg || ""; }
 
 function setUIAuthed(isAuthed) {
   if (isAuthed) {
     signOutBtn.classList.remove("hidden");
     signInBtn.classList.add("hidden");
     signUpBtn.classList.add("hidden");
-    addForm.querySelectorAll("input,select,button").forEach((x) => (x.disabled = false));
+
+    accountLabel.classList.remove("hidden");
+    accountLabel.textContent = sessionUser?.email || "Signed in";
+
+    userLine.textContent = "Signed in";
+    exportBtn.disabled = false;
+    importBtn.disabled = false;
+
+    runOcrBtn.disabled = false;
+    createChatBtn.disabled = false;
+    addManualWordBtn.disabled = false;
+    manualWord.disabled = false;
+    imageInput.disabled = false;
+    chatTitle.disabled = false;
   } else {
     signOutBtn.classList.add("hidden");
     signInBtn.classList.remove("hidden");
     signUpBtn.classList.remove("hidden");
-    addForm.querySelectorAll("input,select,button").forEach((x) => (x.disabled = true));
+
+    accountLabel.classList.add("hidden");
+    accountLabel.textContent = "";
+
+    userLine.textContent = "Sign in qiling.";
+    exportBtn.disabled = true;
+    importBtn.disabled = true;
+
+    runOcrBtn.disabled = true;
+    createChatBtn.disabled = true;
+    addManualWordBtn.disabled = true;
+    manualWord.disabled = true;
+    imageInput.disabled = true;
+    chatTitle.disabled = true;
   }
 }
 
-function cacheSet(list) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch {} }
-function cacheGet() {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-function cacheClear() { try { localStorage.removeItem(CACHE_KEY); } catch {} }
+function setOcrStatus(msg) { setText(ocrStatus, msg); }
+function setCreateStatus(msg) { setText(createStatus, msg); }
 
-function getAllSeed() {
-  return [
-    ...seedDecks.beginner,
-    ...seedDecks.intermediate,
-    ...seedDecks.advanced,
-    ...seedDecks.ielts,
-  ];
-}
+function renderWords() {
+  if (extractedWords.length === 0) {
+    wordsChips.classList.add("muted");
+    wordsChips.textContent = "Hozircha so‘z yo‘q.";
+    return;
+  }
 
-function buildDeck(deckKey) {
-  const allSeed = getAllSeed();
-  if (deckKey === "custom") return [...customCards];
-  if (deckKey === "all") return [...allSeed, ...customCards];
-  if (seedDecks[deckKey]) return [...seedDecks[deckKey]];
-  return [];
+  wordsChips.classList.remove("muted");
+  wordsChips.innerHTML = "";
+
+  for (const w of extractedWords) {
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.textContent = w;
+    chip.title = "Remove";
+    chip.addEventListener("click", () => {
+      extractedWords = extractedWords.filter((x) => x !== w);
+      renderWords();
+    });
+    wordsChips.appendChild(chip);
+  }
 }
 
-function updateStats() {
-  const allSeed = getAllSeed();
-  totalCountEl.textContent = String(allSeed.length + customCards.length);
-  deckCountEl.textContent = String(cards.length);
-}
-
-function renderCustomList() {
+function renderChats() {
   if (!sessionUser) {
-    customListEl.textContent = "Sign in qiling — custom kartalar shu yerda ko‘rinadi.";
+    chatList.classList.add("muted");
+    chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     return;
   }
-  if (customCards.length === 0) {
-    customListEl.textContent = "Hozircha custom so‘z yo‘q.";
+
+  if (chats.length === 0) {
+    chatList.classList.add("muted");
+    chatList.textContent = "Hozircha chat yo‘q. Rasm yuklab yarating.";
     return;
   }
-  const lines = customCards.map((c, i) => {
-    const ex = c.example ? ` | ex: ${c.example}` : "";
-    return `${i + 1}. ${c.word} → ${c.meaning} (${c.tag})${ex}`;
+
+  chatList.classList.remove("muted");
+  chatList.innerHTML = "";
+
+  chats.forEach((c) => {
+    const wrap = document.createElement("div");
+    wrap.className = "chat-item";
+
+    const row1 = document.createElement("div");
+    row1.className = "chat-row";
+
+    const title = document.createElement("div");
+    title.className = "chat-title";
+    title.textContent = c.title;
+
+    const meta = document.createElement("div");
+    meta.className = "chat-meta";
+    meta.textContent = new Date(c.created_at).toLocaleString();
+
+    row1.appendChild(title);
+    row1.appendChild(meta);
+
+    const row2 = document.createElement("div");
+    row2.className = "chat-row";
+
+    const btnOpen = document.createElement("button");
+    btnOpen.className = "btn btn-secondary";
+    btnOpen.type = "button";
+    btnOpen.textContent = "Open";
+    btnOpen.addEventListener("click", async () => {
+      await openChat(c.id);
+    });
+
+    const btnDelete = document.createElement("button");
+    btnDelete.className = "btn btn-ghost";
+    btnDelete.type = "button";
+    btnDelete.textContent = "Delete";
+    btnDelete.addEventListener("click", async () => {
+      const ok = confirm("Chat o‘chiriladi. Davom etasizmi?");
+      if (!ok) return;
+      await deleteChat(c.id);
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "chat-actions";
+    actions.appendChild(btnOpen);
+    actions.appendChild(btnDelete);
+
+    row2.appendChild(document.createElement("div"));
+    row2.appendChild(actions);
+
+    wrap.appendChild(row1);
+    wrap.appendChild(row2);
+
+    chatList.appendChild(wrap);
   });
-  customListEl.textContent = lines.join("\n");
 }
 
-function pickFrontBack(card) {
-  const rand = Math.random() < 0.5;
-  let front = card.word;
-  let back = card.meaning || "—";
-
-  if (currentMode === "back") {
-    front = card.meaning || "—";
-    back = card.word;
-  } else if (currentMode === "mixed") {
-    if (rand) { front = card.word; back = card.meaning || "—"; }
-    else { front = card.meaning || "—"; back = card.word; }
+function renderCardsList() {
+  if (!sessionUser) {
+    cardsList.textContent = "Sign in qiling.";
+    return;
   }
-  return { front, back };
+  if (!activeChatId) {
+    cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
+    return;
+  }
+  if (activeCards.length === 0) {
+    cardsList.textContent = "Bu chatda card yo‘q.";
+    return;
+  }
+
+  const lines = activeCards.map((c, i) => `${i + 1}. ${c.word} → ${c.translation}`);
+  cardsList.textContent = lines.join("\n");
 }
 
-function renderCard() {
-  if (cards.length === 0) {
-    cardTagEl.textContent = "—";
-    frontTextEl.textContent = "Deck tanlang yoki lug‘at qo‘shing.";
+function renderFlashcard() {
+  if (!sessionUser) {
+    activeChatTitle.textContent = "Flashcards";
+    activeChatMeta.textContent = "—";
+    frontTextEl.textContent = "Sign in qiling.";
     backTextEl.textContent = "—";
     exampleTextEl.textContent = "";
     cardBackEl.classList.add("hidden");
     showAnswer = false;
-    updateStats();
     return;
   }
 
-  const card = cards[idx];
-  const { front, back } = pickFrontBack(card);
+  if (!activeChatId) {
+    activeChatTitle.textContent = "Flashcards";
+    activeChatMeta.textContent = "—";
+    frontTextEl.textContent = "Chat tanlang yoki yarating.";
+    backTextEl.textContent = "—";
+    exampleTextEl.textContent = "";
+    cardBackEl.classList.add("hidden");
+    showAnswer = false;
+    return;
+  }
 
-  cardTagEl.textContent = card.tag || currentDeck;
-  frontTextEl.textContent = front;
-  backTextEl.textContent = back;
+  if (activeCards.length === 0) {
+    frontTextEl.textContent = "Chat bo‘sh.";
+    backTextEl.textContent = "—";
+    exampleTextEl.textContent = "";
+    cardBackEl.classList.add("hidden");
+    showAnswer = false;
+    return;
+  }
 
-  const ex = safeTrim(card.example);
-  exampleTextEl.textContent = ex ? `Example: ${ex}` : "";
+  const card = activeCards[idx];
+  frontTextEl.textContent = card.word;
+  backTextEl.textContent = card.translation;
+  exampleTextEl.textContent = card.example ? `Example: ${card.example}` : "";
 
   if (showAnswer) cardBackEl.classList.remove("hidden");
   else cardBackEl.classList.add("hidden");
-
-  updateStats();
-}
-
-function setDeck(deckKey) {
-  currentDeck = deckKey;
-  cards = buildDeck(deckKey);
-  idx = 0;
-  showAnswer = false;
-  renderCard();
-}
-
-function shuffle(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
 }
 
 function flip() {
-  if (cards.length === 0) return;
-  showAnswer = !showAnswer;
-  renderCard();
-}
-
-async function dbLoadCustomCards() {
   if (!sessionUser) return;
-
-  const cached = cacheGet();
-  if (cached.length > 0) {
-    customCards = cached;
-    renderCustomList();
-    setDeck(deckSelect.value);
-  }
-
-  const { data, error } = await supabase
-    .from("vocab_cards")
-    .select("id, word, meaning, example, tag, created_at")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    setStatus(`DB o‘qishda xato: ${error.message}`);
-    return;
-  }
-
-  customCards = (data || []).map((r) => ({
-    id: r.id,
-    word: r.word,
-    meaning: r.meaning,
-    example: r.example || "",
-    tag: r.tag || "custom",
-    created_at: r.created_at,
-  }));
-
-  cacheSet(customCards);
-  renderCustomList();
-  setDeck(deckSelect.value);
-}
-
-async function dbInsertCard(card) {
-  const payload = {
-    user_id: sessionUser.id,
-    word: card.word,
-    meaning: card.meaning,
-    example: card.example || null,
-    tag: card.tag || "custom",
-  };
-
-  const { data, error } = await supabase
-    .from("vocab_cards")
-    .insert(payload)
-    .select("id, word, meaning, example, tag, created_at")
-    .single();
-
-  if (error) throw error;
-
-  return {
-    id: data.id,
-    word: data.word,
-    meaning: data.meaning,
-    example: data.example || "",
-    tag: data.tag || "custom",
-    created_at: data.created_at,
-  };
+  if (!activeChatId) return;
+  if (activeCards.length === 0) return;
+  showAnswer = !showAnswer;
+  renderFlashcard();
 }
 
 async function refreshSession() {
   const { data } = await supabase.auth.getSession();
   sessionUser = data?.session?.user || null;
 
+  setUIAuthed(!!sessionUser);
+
+  // reset UI state
+  extractedWords = [];
+  renderWords();
+  setOcrStatus("");
+  setCreateStatus("");
+
+  activeChatId = null;
+  activeCards = [];
+  idx = 0;
+  showAnswer = false;
+  renderCardsList();
+  renderFlashcard();
+
   if (sessionUser) {
-    userLine.textContent = `Signed in: ${sessionUser.email}`;
-    setUIAuthed(true);
-    await dbLoadCustomCards();
+    await loadChats();
   } else {
-    userLine.textContent = "Sign in qiling.";
-    setUIAuthed(false);
-    customCards = [];
-    cacheClear();
-    renderCustomList();
-    setDeck(deckSelect.value);
+    chats = [];
+    renderChats();
   }
 }
+
+async function loadChats() {
+  const { data, error } = await supabase
+    .from("vocab_chats")
+    .select("id, title, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    setCreateStatus(`Chats load error: ${error.message}`);
+    chats = [];
+    renderChats();
+    return;
+  }
+
+  chats = data || [];
+  renderChats();
+
+  // auto open first chat
+  if (chats.length > 0) {
+    await openChat(chats[0].id);
+  }
+}
+
+async function openChat(chatId) {
+  activeChatId = chatId;
+  idx = 0;
+  showAnswer = false;
+
+  const chat = chats.find((c) => c.id === chatId);
+  activeChatTitle.textContent = chat ? chat.title : "Flashcards";
+  activeChatMeta.textContent = chat ? "custom" : "—";
+
+  const { data, error } = await supabase
+    .from("vocab_chat_cards")
+    .select("id, word, translation, example, created_at")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    setCreateStatus(`Cards load error: ${error.message}`);
+    activeCards = [];
+  } else {
+    activeCards = (data || []).map((r) => ({
+      id: r.id,
+      word: r.word,
+      translation: r.translation,
+      example: r.example || "",
+      created_at: r.created_at,
+    }));
+  }
+
+  renderCardsList();
+  renderFlashcard();
+}
+
+async function deleteChat(chatId) {
+  // Delete chat -> cards cascade
+  const { error } = await supabase
+    .from("vocab_chats")
+    .delete()
+    .eq("id", chatId);
+
+  if (error) {
+    setCreateStatus(`Delete error: ${error.message}`);
+    return;
+  }
+
+  // refresh list
+  await loadChats();
+}
+
+function extractWordsFromText(text) {
+  const raw = (text || "").toLowerCase();
+  const matches = raw.match(/[a-z]+(?:'[a-z]+)?/g) || [];
+  const cleaned = matches
+    .map((w) => w.replace(/^'+|'+$/g, ""))
+    .filter((w) => w.length >= 3 && !STOP.has(w));
+
+  // unique
+  const set = new Set();
+  const out = [];
+  for (const w of cleaned) {
+    if (!set.has(w)) {
+      set.add(w);
+      out.push(w);
+    }
+  }
+  return out.slice(0, 120); // safety cap
+}
+
+async function runOcrOnFile(file) {
+  setOcrStatus("OCR boshlanmoqda...");
+
+  const worker = await Tesseract.createWorker("eng");
+  try {
+    await worker.setParameters({
+      tessedit_char_whitelist: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' ",
+    });
+
+    const { data } = await worker.recognize(file, undefined, {
+      logger: (m) => {
+        if (m?.status && typeof m?.progress === "number") {
+          const pct = Math.round(m.progress * 100);
+          setOcrStatus(`${m.status}... ${pct}%`);
+        }
+      },
+    });
+
+    const text = data?.text || "";
+    const words = extractWordsFromText(text);
+
+    extractedWords = words;
+    renderWords();
+
+    setOcrStatus(`OCR tugadi. Topildi: ${words.length} ta so‘z.`);
+  } finally {
+    await worker.terminate();
+  }
+}
+
+async function translateWordENtoUZ(word) {
+  // MyMemory free translation (no key)
+  // Sends the word text (not image)
+  const q = encodeURIComponent(word);
+  const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
+
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error("Translate API error");
+
+  const data = await res.json();
+  const t = data?.responseData?.translatedText;
+  const tr = safeTrim(t);
+  return tr || "(tarjima topilmadi)";
+}
+
+async function translateWordsBatch(words) {
+  // sequential with light throttling
+  const out = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    setCreateStatus(`Tarjima: ${i + 1}/${words.length} (${w})...`);
+    try {
+      const tr = await translateWordENtoUZ(w);
+      out.push({ word: w, translation: tr });
+    } catch (e) {
+      out.push({ word: w, translation: "(tarjima xato)" });
+    }
+    // small delay to reduce rate-limit risk
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return out;
+}
+
+async function createChatWithCards(title, wordPairs) {
+  // Create chat (trigger enforces max 2 per user)
+  const { data: chatData, error: chatErr } = await supabase
+    .from("vocab_chats")
+    .insert({
+      user_id: sessionUser.id,
+      title,
+    })
+    .select("id, title, created_at")
+    .single();
+
+  if (chatErr) throw chatErr;
+
+  const chatId = chatData.id;
+
+  // Insert cards
+  const rows = wordPairs.map((p) => ({
+    chat_id: chatId,
+    user_id: sessionUser.id,
+    word: p.word,
+    translation: p.translation,
+    example: null,
+  }));
+
+  const { error: cardsErr } = await supabase
+    .from("vocab_chat_cards")
+    .insert(rows);
+
+  if (cardsErr) throw cardsErr;
+
+  return chatData;
+}
+
+/** =========================
+ *  Events
+ *  ========================= */
 
 signOutBtn.addEventListener("click", async () => {
   try {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-  } catch (err) {
-    setStatus(`Sign out xato: ${err?.message || "unknown error"}`);
+  } catch (e) {
+    setCreateStatus(`Sign out error: ${e?.message || "unknown"}`);
   } finally {
     await refreshSession();
   }
 });
 
-deckSelect.addEventListener("change", () => setDeck(deckSelect.value));
-modeSelect.addEventListener("change", () => { currentMode = modeSelect.value; renderCard(); });
-
-shuffleBtn.addEventListener("click", () => {
-  if (cards.length === 0) return;
-  cards = shuffle(cards);
-  idx = 0;
-  showAnswer = false;
-  renderCard();
+runOcrBtn.addEventListener("click", async () => {
+  if (!sessionUser) {
+    setOcrStatus("Avval Sign in qiling.");
+    return;
+  }
+  const file = imageInput.files?.[0];
+  if (!file) {
+    setOcrStatus("Iltimos rasm tanlang.");
+    return;
+  }
+  try {
+    await runOcrOnFile(file);
+  } catch (e) {
+    setOcrStatus(`OCR xato: ${e?.message || "unknown"}`);
+  }
 });
 
-toggleAnswerBtn.addEventListener("click", () => { showAnswer = !showAnswer; renderCard(); });
-
-prevBtn.addEventListener("click", () => {
-  if (cards.length === 0) return;
-  idx = (idx - 1 + cards.length) % cards.length;
-  showAnswer = false;
-  renderCard();
+clearScanBtn.addEventListener("click", () => {
+  imageInput.value = "";
+  extractedWords = [];
+  renderWords();
+  setOcrStatus("");
+  setCreateStatus("");
 });
 
-nextBtn.addEventListener("click", () => {
-  if (cards.length === 0) return;
-  idx = (idx + 1) % cards.length;
-  showAnswer = false;
-  renderCard();
+addManualWordBtn.addEventListener("click", () => {
+  const w = safeTrim(manualWord.value).toLowerCase();
+  if (!w) return;
+  if (!/^[a-z]+(?:'[a-z]+)?$/.test(w)) {
+    setOcrStatus("Faqat inglizcha so‘z kiriting (a-z).");
+    return;
+  }
+  if (!extractedWords.includes(w)) extractedWords.unshift(w);
+  manualWord.value = "";
+  renderWords();
 });
 
-cardEl.addEventListener("click", flip);
-cardEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
-});
-
-addForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (!sessionUser) { setStatus("Avval Sign in qiling."); return; }
-
-  const rawWord = safeTrim(wordInput.value);
-  const meaning = safeTrim(meaningInput.value);
-  const tag = levelSelect.value === "custom" ? "custom" : levelSelect.value;
-  const example = safeTrim(exampleInput.value);
-
-  if (!rawWord || !meaning) return;
-
-  const wn = normalizeWord(rawWord);
-  if (customCards.some((c) => normalizeWord(c.word) === wn)) {
-    setStatus("Bu so‘z custom ro‘yxatda bor. (Duplikat qo‘shilmadi)");
+createChatBtn.addEventListener("click", async () => {
+  if (!sessionUser) {
+    setCreateStatus("Avval Sign in qiling.");
+    return;
+  }
+  if (extractedWords.length === 0) {
+    setCreateStatus("So‘zlar yo‘q. Avval OCR qiling yoki manual qo‘shing.");
     return;
   }
 
-  setStatus("Saqlanyapti...");
+  // local client-side limit hint (real limit is DB trigger)
+  if (chats.length >= 2) {
+    setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chirib, keyin yarating.");
+    return;
+  }
+
+  const titleRaw = safeTrim(chatTitle.value);
+  const title = titleRaw || `Reading chat ${new Date().toLocaleString()}`;
 
   try {
-    const inserted = await dbInsertCard({ word: rawWord, meaning, example, tag });
-    customCards.unshift(inserted);
-    cacheSet(customCards);
+    setCreateStatus(`Tarjima boshlanmoqda (EN→UZ)...`);
+    const pairs = await translateWordsBatch(extractedWords);
 
-    setStatus("Qo‘shildi ✅");
-    wordInput.value = "";
-    meaningInput.value = "";
-    exampleInput.value = "";
+    setCreateStatus("Chat yaratilmoqda...");
+    const newChat = await createChatWithCards(title, pairs);
 
-    renderCustomList();
-    const current = deckSelect.value;
-    if (current === "custom" || current === "all") setDeck(current);
-  } catch (err) {
-    setStatus(`Saqlash xato: ${err?.message || "unknown error"}`);
+    // refresh chats list & open new chat
+    await loadChats();
+    await openChat(newChat.id);
+
+    // clear
+    extractedWords = [];
+    renderWords();
+    imageInput.value = "";
+    chatTitle.value = "";
+    setOcrStatus("");
+    setCreateStatus("Tayyor ✅");
+  } catch (e) {
+    setCreateStatus(`Xato: ${e?.message || "unknown"}`);
   }
 });
 
+cardEl.addEventListener("click", () => flip());
+cardEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    flip();
+  }
+});
+
+prevBtn.addEventListener("click", () => {
+  if (!sessionUser || !activeChatId || activeCards.length === 0) return;
+  idx = (idx - 1 + activeCards.length) % activeCards.length;
+  showAnswer = false;
+  renderFlashcard();
+});
+
+nextBtn.addEventListener("click", () => {
+  if (!sessionUser || !activeChatId || activeCards.length === 0) return;
+  idx = (idx + 1) % activeCards.length;
+  showAnswer = false;
+  renderFlashcard();
+});
+
+// Export active chat cards as JSON
 exportBtn.addEventListener("click", () => {
-  if (!sessionUser) { setStatus("Export uchun Sign in qiling."); return; }
-  const blob = new Blob([JSON.stringify(customCards, null, 2)], { type: "application/json" });
+  if (!sessionUser) {
+    setCreateStatus("Export uchun Sign in qiling.");
+    return;
+  }
+  if (!activeChatId) {
+    setCreateStatus("Export uchun chat tanlang.");
+    return;
+  }
+
+  const payload = {
+    chat: chats.find((c) => c.id === activeChatId) || null,
+    cards: activeCards,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vocab_custom_export.json";
+  a.download = "vocab_chat_export.json";
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
 });
 
+// Import: creates a new chat (counts toward limit)
 importBtn.addEventListener("click", () => {
-  if (!sessionUser) { setStatus("Import uchun Sign in qiling."); return; }
+  if (!sessionUser) {
+    setCreateStatus("Import uchun Sign in qiling.");
+    return;
+  }
   importFile.click();
 });
 
@@ -400,57 +640,58 @@ importFile.addEventListener("change", async () => {
   const file = importFile.files?.[0];
   if (!file) return;
 
+  if (chats.length >= 2) {
+    setCreateStatus("Limit: 2 ta chat. Import qilish uchun bittasini o‘chiring.");
+    importFile.value = "";
+    return;
+  }
+
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) { setStatus("Import xato: JSON array bo‘lishi kerak."); return; }
 
-    const cleaned = parsed
-      .filter((c) => c && typeof c.word === "string" && typeof c.meaning === "string")
+    const title = safeTrim(parsed?.chat?.title) || `Imported chat ${new Date().toLocaleString()}`;
+    const cards = Array.isArray(parsed?.cards) ? parsed.cards : [];
+
+    const pairs = cards
+      .filter((c) => c && typeof c.word === "string" && typeof c.translation === "string")
       .map((c) => ({
-        word: safeTrim(c.word),
-        meaning: safeTrim(c.meaning),
-        example: safeTrim(c.example),
-        tag: safeTrim(c.tag) || "custom",
+        word: safeTrim(c.word).toLowerCase(),
+        translation: safeTrim(c.translation),
       }))
-      .filter((c) => c.word && c.meaning);
+      .filter((c) => c.word && c.translation);
 
-    let added = 0;
-    for (const c of cleaned) {
-      const wn = normalizeWord(c.word);
-      if (customCards.some((x) => normalizeWord(x.word) === wn)) continue;
-      try {
-        const inserted = await dbInsertCard(c);
-        customCards.unshift(inserted);
-        added++;
-      } catch {}
+    if (pairs.length === 0) {
+      setCreateStatus("Import xato: cards topilmadi.");
+      return;
     }
 
-    cacheSet(customCards);
-    renderCustomList();
-    const current = deckSelect.value;
-    if (current === "custom" || current === "all") setDeck(current);
+    setCreateStatus("Import: chat yaratilmoqda...");
+    const newChat = await createChatWithCards(title, pairs);
 
-    setStatus(`Import tugadi ✅ Yangi qo‘shildi: ${added} ta`);
-  } catch {
-    setStatus("Import xato: JSON o‘qilmadi.");
+    await loadChats();
+    await openChat(newChat.id);
+
+    setCreateStatus("Import tugadi ✅");
+  } catch (e) {
+    setCreateStatus(`Import xato: ${e?.message || "unknown"}`);
   } finally {
     importFile.value = "";
   }
 });
 
-resetBtn.addEventListener("click", () => {
-  cacheClear();
-  setStatus("Local cache tozalandi. (DB saqlanib qoladi)");
-});
-
+/** =========================
+ *  Init
+ *  ========================= */
 (async function init() {
-  setUIAuthed(false);
-  renderCustomList();
-  currentDeck = deckSelect.value;
-  currentMode = modeSelect.value;
-  setDeck(currentDeck);
+  // initial UI
+  extractedWords = [];
+  renderWords();
+  renderChats();
+  renderCardsList();
+  renderFlashcard();
 
+  // auth state changes
   supabase.auth.onAuthStateChange(async () => {
     await refreshSession();
   });

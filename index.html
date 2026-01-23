@@ -10,125 +10,97 @@
     <header class="container header">
       <div class="brand">
         <div class="logo">VC</div>
-        <div>
+        <div class="brand-text">
           <h1>Vocab Cards</h1>
           <p class="muted" id="userLine">Sign in qiling.</p>
         </div>
       </div>
 
       <div class="header-actions">
-        <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
-        <a id="signUpBtn" class="btn btn-ghost" href="./auth.html">Sign up</a>
-        <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
-
-        <button id="resetBtn" class="btn btn-ghost" title="Custom local cache ni tozalash" type="button">
-          Reset
-        </button>
+        <div class="account-box">
+          <div id="accountLabel" class="account-label hidden"></div>
+          <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
+          <a id="signUpBtn" class="btn btn-ghost" href="./auth.html">Sign up</a>
+          <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
+        </div>
       </div>
     </header>
 
-    <main class="container grid">
+    <main class="container layout">
+      <!-- LEFT: Upload + Extract + Create chat -->
       <section class="panel">
-        <h2>Lug‘at qo‘shish</h2>
+        <h2>Rasm yuklash (OCR)</h2>
 
-        <form id="addForm" class="form">
-          <label class="label">
-            So‘z (English)
-            <input id="wordInput" class="input" type="text" placeholder="" required />
-          </label>
+        <div class="muted small">
+          Rasm serverga saqlanmaydi. OCR brauzerda ishlaydi; tarjima uchun so‘zlar EN→UZ servisiga yuboriladi.
+        </div>
 
+        <div class="form">
           <label class="label">
-            Ma’nosi (UZ/RU — o‘zingiz yozasiz)
-            <input id="meaningInput" class="input" type="text" placeholder="" required />
+            Reading kitobdan rasm (jpg/png)
+            <input id="imageInput" class="input" type="file" accept="image/*" />
           </label>
 
           <div class="row">
-            <label class="label">
-              Bosqich (tag)
-              <select id="levelSelect" class="select">
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-                <option value="ielts">IELTS Reading</option>
-                <option value="custom">Custom</option>
-              </select>
-            </label>
-
-            <label class="label">
-              Example (ixtiyoriy)
-              <input id="exampleInput" class="input" type="text" placeholder="" />
-            </label>
+            <button id="runOcrBtn" class="btn btn-primary" type="button">Scan (OCR)</button>
+            <button id="clearScanBtn" class="btn btn-ghost" type="button">Clear</button>
           </div>
 
-          <button id="addBtn" class="btn btn-primary" type="submit">Add Card</button>
-          <p id="status" class="status muted" aria-live="polite"></p>
-        </form>
+          <div id="ocrStatus" class="status muted"></div>
 
-        <div class="divider"></div>
+          <div class="divider"></div>
 
-        <h2>Deck tanlash</h2>
+          <h2>Ajratilgan so‘zlar</h2>
+          <div class="muted small">
+            Keraksiz so‘zni bosib olib tashlang. So‘ng “Create chat” bosing.
+          </div>
 
-        <div class="row">
-          <label class="label">
-            Deck
-            <select id="deckSelect" class="select">
-              <option value="beginner">Beginner (tayyor)</option>
-              <option value="intermediate">Intermediate (tayyor)</option>
-              <option value="advanced">Advanced (tayyor)</option>
-              <option value="ielts">IELTS Reading (tayyor)</option>
-              <option value="custom">Custom (sizniki)</option>
-              <option value="all">All (hammasi)</option>
-            </select>
-          </label>
+          <div id="wordsChips" class="chips muted">Hozircha so‘z yo‘q.</div>
+
+          <div class="row">
+            <label class="label" style="flex:1;">
+              So‘z qo‘shish (manual)
+              <input id="manualWord" class="input" type="text" placeholder="e.g., allocate" />
+            </label>
+            <button id="addManualWordBtn" class="btn btn-secondary" type="button">Add</button>
+          </div>
+
+          <div class="divider"></div>
 
           <label class="label">
-            Mode
-            <select id="modeSelect" class="select">
-              <option value="front">Avval so‘z</option>
-              <option value="back">Avval ma’no</option>
-              <option value="mixed">Aralash</option>
-            </select>
+            Chat nomi (ixtiyoriy)
+            <input id="chatTitle" class="input" type="text" placeholder="e.g., Reading Unit 3" />
           </label>
-        </div>
 
-        <div class="row">
-          <button id="shuffleBtn" class="btn btn-secondary" type="button">Shuffle</button>
-          <button id="toggleAnswerBtn" class="btn btn-ghost" type="button">Show/Hide Answer</button>
-        </div>
+          <button id="createChatBtn" class="btn btn-primary" type="button">Translate & Create Chat</button>
+          <div id="createStatus" class="status muted"></div>
 
-        <p class="muted hint">Card ustiga bosing: orqasi ochiladi/yopiladi.</p>
+          <div class="divider"></div>
 
-        <div class="divider"></div>
-
-        <h2>Statistika</h2>
-        <div class="stats">
-          <div class="stat">
-            <div class="stat-title muted">Jami kartalar</div>
-            <div id="totalCount" class="stat-value">0</div>
-          </div>
-          <div class="stat">
-            <div class="stat-title muted">Deck bo‘yicha</div>
-            <div id="deckCount" class="stat-value">0</div>
-          </div>
+          <h2>Chatlar (max 2)</h2>
+          <div id="chatList" class="chat-list muted">Sign in qiling — chatlar shu yerda chiqadi.</div>
         </div>
       </section>
 
+      <!-- RIGHT: Flashcards for selected chat -->
       <section class="panel">
         <div class="card-header">
-          <h2>Flashcard</h2>
-          <div class="pill" id="cardTag">—</div>
+          <h2 id="activeChatTitle">Flashcards</h2>
+          <div class="pill" id="activeChatMeta">—</div>
         </div>
 
-        <div class="muted small">Card ustiga bosing: flip bo‘ladi.</div>
+        <div class="muted small">
+          Card ustiga bosing: flip bo‘ladi.
+        </div>
 
         <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
           <div class="card-face" id="cardFront">
-            <div class="card-label muted">Front</div>
-            <div class="card-text" id="frontText">Deck tanlang yoki lug‘at qo‘shing.</div>
+            <div class="card-label muted">EN</div>
+            <div class="card-text" id="frontText">Chat tanlang yoki yaratib oling.</div>
           </div>
 
           <div class="card-face card-back hidden" id="cardBack">
-            <div class="card-label muted">Back</div>
+            <div class="card-label muted">UZ</div>
             <div class="card-text" id="backText">—</div>
             <div class="card-example" id="exampleText"></div>
           </div>
@@ -141,20 +113,26 @@
 
         <div class="divider"></div>
 
-        <h2>Custom ro‘yxat</h2>
+        <h2>Chat import/export</h2>
         <div class="list-actions row">
           <button id="exportBtn" class="btn btn-ghost" type="button">Export JSON</button>
           <button id="importBtn" class="btn btn-ghost" type="button">Import JSON</button>
           <input id="importFile" type="file" accept="application/json" class="hidden" />
         </div>
 
-        <div id="customList" class="list muted">Sign in qiling — custom kartalar shu yerda ko‘rinadi.</div>
+        <div id="cardsList" class="list muted">Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.</div>
       </section>
     </main>
 
-    <footer class="container footer muted"></footer>
+    <footer class="container footer muted">
+      <p>
+        Mobile-first. Har user: max 2 chat. Har chat: OCR → EN→UZ cards.
+      </p>
+    </footer>
 
+    <!-- Supabase + OCR -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
