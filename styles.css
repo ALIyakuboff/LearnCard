@@ -113,7 +113,7 @@ p { margin: 0; }
 .btn:active { transform: translateY(0px); }
 
 a.btn, a.btn:hover, a.btn:focus, a.btn:active {
-  text-decoration: none; /* underline yo'q (A-variant linklar uchun) */
+  text-decoration: none; /* underline yo'q */
 }
 
 .btn-primary {

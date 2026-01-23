@@ -7,31 +7,14 @@
     <link rel="stylesheet" href="./styles.css" />
 
     <style>
-      .auth-wrap {
-        width: min(520px, calc(100% - 32px));
-        margin: 18px auto 0 auto;
-      }
-      .auth-tabs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 12px;
-      }
-      .auth-tab {
-        text-align: center;
-        font-weight: 650;
-      }
+      .auth-wrap { width: min(520px, calc(100% - 32px)); margin: 18px auto 0 auto; }
+      .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+      .auth-tab { text-align: center; font-weight: 650; }
       .auth-tab.active {
         background: linear-gradient(135deg, rgba(79,70,229,1), rgba(99,102,241,1));
         border-color: rgba(79,70,229,0.45);
       }
-      .auth-footer {
-        margin-top: 12px;
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
+      .auth-footer { margin-top: 12px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
       .auth-footer a { text-decoration: none; }
     </style>
   </head>
@@ -58,7 +41,6 @@
       </div>
 
       <section class="panel">
-        <!-- SIGN UP (default) -->
         <form id="signUpForm" class="form">
           <h2 style="margin-bottom: 6px;">Sign up</h2>
 
@@ -74,13 +56,8 @@
 
           <button class="btn btn-primary" type="submit">Create account</button>
           <p id="signUpStatus" class="status muted" aria-live="polite"></p>
-
-          <p class="muted small">
-            Eslatma: Supabase sozlamasiga qarab email confirmation talab qilinishi mumkin.
-          </p>
         </form>
 
-        <!-- SIGN IN (hidden by default) -->
         <form id="signInForm" class="form hidden">
           <h2 style="margin-bottom: 6px;">Sign in</h2>
 

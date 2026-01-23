@@ -17,11 +17,8 @@
       </div>
 
       <div class="header-actions">
-        <!-- A-variant: alohida auth sahifaga o'tadi -->
         <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
         <a id="signUpBtn" class="btn btn-ghost" href="./auth.html">Sign up</a>
-
-        <!-- Login bo'lganda ko'rinadi -->
         <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
 
         <button id="resetBtn" class="btn btn-ghost" title="Custom local cache ni tozalash" type="button">
@@ -31,7 +28,6 @@
     </header>
 
     <main class="container grid">
-      <!-- LEFT: add + controls -->
       <section class="panel">
         <h2>Lug‘at qo‘shish</h2>
 
@@ -64,10 +60,7 @@
             </label>
           </div>
 
-          <button id="addBtn" class="btn btn-primary" type="submit">
-            Add Card
-          </button>
-
+          <button id="addBtn" class="btn btn-primary" type="submit">Add Card</button>
           <p id="status" class="status muted" aria-live="polite"></p>
         </form>
 
@@ -120,16 +113,13 @@
         </div>
       </section>
 
-      <!-- RIGHT: card + custom list -->
       <section class="panel">
         <div class="card-header">
           <h2>Flashcard</h2>
           <div class="pill" id="cardTag">—</div>
         </div>
 
-        <div class="muted small">
-          Card ustiga bosing: flip bo‘ladi.
-        </div>
+        <div class="muted small">Card ustiga bosing: flip bo‘ladi.</div>
 
         <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
           <div class="card-face" id="cardFront">
@@ -164,7 +154,6 @@
 
     <footer class="container footer muted"></footer>
 
-    <!-- Supabase JS (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./app.js"></script>
   </body>

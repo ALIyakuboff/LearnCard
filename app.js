@@ -1,16 +1,14 @@
 /* ===========
   app.js (A-variant)
-  - Index sahifada auth linklar (auth.html) bor, modal yo‘q
-  - Session bo‘lsa userLine’da email ko‘rsatadi
-  - Custom cards Supabase DB’da saqlanadi va faqat egasi ko‘radi (RLS)
+  - Signed in bo'lsa headerda ko'rsatadi
+  - Custom cards Supabase DB’da (RLS: faqat egasi ko'radi)
 =========== */
 
-const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/* ===== Seed decks ===== */
 const seedDecks = {
   beginner: [
     { word: "family", meaning: "oila", example: "My family is very supportive.", tag: "beginner" },
@@ -73,14 +71,13 @@ const importFile = el("importFile");
 const resetBtn = el("resetBtn");
 
 let sessionUser = null;
+let customCards = [];
 
 let showAnswer = false;
 let currentDeck = "beginner";
 let currentMode = "front";
 let cards = [];
 let idx = 0;
-
-let customCards = [];
 
 const CACHE_KEY = "vocab_cards_custom_cache_v1";
 
@@ -106,9 +103,7 @@ function setUIAuthed(isAuthed) {
   }
 }
 
-function cacheSet(list) {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch {}
-}
+function cacheSet(list) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(list)); } catch {} }
 function cacheGet() {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
@@ -117,11 +112,8 @@ function cacheGet() {
     return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
-function cacheClear() {
-  try { localStorage.removeItem(CACHE_KEY); } catch {}
-}
+function cacheClear() { try { localStorage.removeItem(CACHE_KEY); } catch {} }
 
-/* ===== Deck logic ===== */
 function getAllSeed() {
   return [
     ...seedDecks.beginner,
@@ -133,12 +125,9 @@ function getAllSeed() {
 
 function buildDeck(deckKey) {
   const allSeed = getAllSeed();
-
   if (deckKey === "custom") return [...customCards];
   if (deckKey === "all") return [...allSeed, ...customCards];
-
   if (seedDecks[deckKey]) return [...seedDecks[deckKey]];
-
   return [];
 }
 
@@ -157,33 +146,24 @@ function renderCustomList() {
     customListEl.textContent = "Hozircha custom so‘z yo‘q.";
     return;
   }
-
   const lines = customCards.map((c, i) => {
     const ex = c.example ? ` | ex: ${c.example}` : "";
     return `${i + 1}. ${c.word} → ${c.meaning} (${c.tag})${ex}`;
   });
-
   customListEl.textContent = lines.join("\n");
 }
 
 function pickFrontBack(card) {
-  const mode = currentMode;
   const rand = Math.random() < 0.5;
-
   let front = card.word;
   let back = card.meaning || "—";
 
-  if (mode === "back") {
+  if (currentMode === "back") {
     front = card.meaning || "—";
     back = card.word;
-  } else if (mode === "mixed") {
-    if (rand) {
-      front = card.word;
-      back = card.meaning || "—";
-    } else {
-      front = card.meaning || "—";
-      back = card.word;
-    }
+  } else if (currentMode === "mixed") {
+    if (rand) { front = card.word; back = card.meaning || "—"; }
+    else { front = card.meaning || "—"; back = card.word; }
   }
   return { front, back };
 }
@@ -238,11 +218,9 @@ function flip() {
   renderCard();
 }
 
-/* ===== Supabase DB ops (custom cards) ===== */
 async function dbLoadCustomCards() {
   if (!sessionUser) return;
 
-  // cache first
   const cached = cacheGet();
   if (cached.length > 0) {
     customCards = cached;
@@ -301,7 +279,6 @@ async function dbInsertCard(card) {
   };
 }
 
-/* ===== Auth state ===== */
 async function refreshSession() {
   const { data } = await supabase.auth.getSession();
   sessionUser = data?.session?.user || null;
@@ -320,15 +297,10 @@ async function refreshSession() {
   }
 }
 
-async function doSignOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
-}
-
-/* ===== Events ===== */
 signOutBtn.addEventListener("click", async () => {
   try {
-    await doSignOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   } catch (err) {
     setStatus(`Sign out xato: ${err?.message || "unknown error"}`);
   } finally {
@@ -337,11 +309,7 @@ signOutBtn.addEventListener("click", async () => {
 });
 
 deckSelect.addEventListener("change", () => setDeck(deckSelect.value));
-
-modeSelect.addEventListener("change", () => {
-  currentMode = modeSelect.value;
-  renderCard();
-});
+modeSelect.addEventListener("change", () => { currentMode = modeSelect.value; renderCard(); });
 
 shuffleBtn.addEventListener("click", () => {
   if (cards.length === 0) return;
@@ -351,10 +319,7 @@ shuffleBtn.addEventListener("click", () => {
   renderCard();
 });
 
-toggleAnswerBtn.addEventListener("click", () => {
-  showAnswer = !showAnswer;
-  renderCard();
-});
+toggleAnswerBtn.addEventListener("click", () => { showAnswer = !showAnswer; renderCard(); });
 
 prevBtn.addEventListener("click", () => {
   if (cards.length === 0) return;
@@ -372,20 +337,12 @@ nextBtn.addEventListener("click", () => {
 
 cardEl.addEventListener("click", flip);
 cardEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    flip();
-  }
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
 });
 
-// Add card (DB)
 addForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-
-  if (!sessionUser) {
-    setStatus("Avval Sign in qiling.");
-    return;
-  }
+  if (!sessionUser) { setStatus("Avval Sign in qiling."); return; }
 
   const rawWord = safeTrim(wordInput.value);
   const meaning = safeTrim(meaningInput.value);
@@ -394,7 +351,6 @@ addForm.addEventListener("submit", async (e) => {
 
   if (!rawWord || !meaning) return;
 
-  // duplikat (client)
   const wn = normalizeWord(rawWord);
   if (customCards.some((c) => normalizeWord(c.word) === wn)) {
     setStatus("Bu so‘z custom ro‘yxatda bor. (Duplikat qo‘shilmadi)");
@@ -414,7 +370,6 @@ addForm.addEventListener("submit", async (e) => {
     exampleInput.value = "";
 
     renderCustomList();
-
     const current = deckSelect.value;
     if (current === "custom" || current === "all") setDeck(current);
   } catch (err) {
@@ -422,16 +377,10 @@ addForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Export
 exportBtn.addEventListener("click", () => {
-  if (!sessionUser) {
-    setStatus("Export uchun Sign in qiling.");
-    return;
-  }
-
+  if (!sessionUser) { setStatus("Export uchun Sign in qiling."); return; }
   const blob = new Blob([JSON.stringify(customCards, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = "vocab_custom_export.json";
@@ -441,29 +390,20 @@ exportBtn.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// Import
 importBtn.addEventListener("click", () => {
-  if (!sessionUser) {
-    setStatus("Import uchun Sign in qiling.");
-    return;
-  }
+  if (!sessionUser) { setStatus("Import uchun Sign in qiling."); return; }
   importFile.click();
 });
 
 importFile.addEventListener("change", async () => {
   if (!sessionUser) return;
-
   const file = importFile.files?.[0];
   if (!file) return;
 
   try {
     const text = await file.text();
     const parsed = JSON.parse(text);
-
-    if (!Array.isArray(parsed)) {
-      setStatus("Import xato: JSON array bo‘lishi kerak.");
-      return;
-    }
+    if (!Array.isArray(parsed)) { setStatus("Import xato: JSON array bo‘lishi kerak."); return; }
 
     const cleaned = parsed
       .filter((c) => c && typeof c.word === "string" && typeof c.meaning === "string")
@@ -476,23 +416,18 @@ importFile.addEventListener("change", async () => {
       .filter((c) => c.word && c.meaning);
 
     let added = 0;
-
     for (const c of cleaned) {
       const wn = normalizeWord(c.word);
       if (customCards.some((x) => normalizeWord(x.word) === wn)) continue;
-
       try {
         const inserted = await dbInsertCard(c);
         customCards.unshift(inserted);
         added++;
-      } catch {
-        // skip xato row
-      }
+      } catch {}
     }
 
     cacheSet(customCards);
     renderCustomList();
-
     const current = deckSelect.value;
     if (current === "custom" || current === "all") setDeck(current);
 
@@ -504,18 +439,14 @@ importFile.addEventListener("change", async () => {
   }
 });
 
-// Reset = local cache only
 resetBtn.addEventListener("click", () => {
   cacheClear();
   setStatus("Local cache tozalandi. (DB saqlanib qoladi)");
 });
 
-/* ===== Init ===== */
 (async function init() {
-  // Login bo‘lmaguncha addForm disable
   setUIAuthed(false);
   renderCustomList();
-
   currentDeck = deckSelect.value;
   currentMode = modeSelect.value;
   setDeck(currentDeck);

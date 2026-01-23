@@ -1,137 +1,149 @@
 /* ===========
-  auth.js (A-variant)
-  - Default: Sign up
-  - Account bo‘lsa: Sign in tab
-  - Login bo‘lsa: index.html ga avtomatik redirect
+  auth.js (A-variant, robust)
+  - UI tab switch ALWAYS works (even if Supabase config is wrong)
+  - Sign up/in works when SUPABASE_URL + SUPABASE_ANON_KEY are correct
+  - Redirect after login -> index.html on same host
 =========== */
 
-const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+document.addEventListener("DOMContentLoaded", () => {
+  const el = (id) => document.getElementById(id);
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const authTopLine = el("authTopLine");
+  const hintLine = el("hintLine");
 
-const el = (id) => document.getElementById(id);
+  const tabSignUp = el("tabSignUp");
+  const tabSignIn = el("tabSignIn");
 
-const authTopLine = el("authTopLine");
-const hintLine = el("hintLine");
+  const signUpForm = el("signUpForm");
+  const signUpEmail = el("signUpEmail");
+  const signUpPassword = el("signUpPassword");
+  const signUpStatus = el("signUpStatus");
 
-const tabSignUp = el("tabSignUp");
-const tabSignIn = el("tabSignIn");
+  const signInForm = el("signInForm");
+  const signInEmail = el("signInEmail");
+  const signInPassword = el("signInPassword");
+  const signInStatus = el("signInStatus");
 
-const signUpForm = el("signUpForm");
-const signUpEmail = el("signUpEmail");
-const signUpPassword = el("signUpPassword");
-const signUpStatus = el("signUpStatus");
+  function safeTrim(s) { return (s || "").trim(); }
+  function setStatus(node, msg) { node.className = "status muted"; node.textContent = msg || ""; }
 
-const signInForm = el("signInForm");
-const signInEmail = el("signInEmail");
-const signInPassword = el("signInPassword");
-const signInStatus = el("signInStatus");
-
-function safeTrim(s) {
-  return (s || "").trim();
-}
-
-function setStatus(node, msg) {
-  node.className = "status muted";
-  node.textContent = msg;
-}
-
-function clearStatuses() {
-  setStatus(signUpStatus, "");
-  setStatus(signInStatus, "");
-}
-
-function goHome() {
-  // Doim bir xil hostda qaytadi (production URL bo‘lsa ideal)
-  window.location.href = `${window.location.origin}/index.html`;
-}
-
-function setMode(mode /* 'up' | 'in' */) {
-  clearStatuses();
-
-  if (mode === "in") {
-    tabSignIn.classList.add("active");
-    tabSignUp.classList.remove("active");
-
-    signInForm.classList.remove("hidden");
-    signUpForm.classList.add("hidden");
-
-    authTopLine.textContent = "Kirish";
-    hintLine.textContent = "Hisobingiz yo‘q bo‘lsa, Sign up ni bosing.";
-    signInEmail.focus();
-  } else {
-    tabSignUp.classList.add("active");
-    tabSignIn.classList.remove("active");
-
-    signUpForm.classList.remove("hidden");
-    signInForm.classList.add("hidden");
-
-    authTopLine.textContent = "Ro‘yxatdan o‘tish";
-    hintLine.textContent = "Hisobingiz bo‘lsa, Sign in ni bosing.";
-    signUpEmail.focus();
+  function goHome() {
+    window.location.href = `${window.location.origin}/index.html`;
   }
-}
 
-/* Default: Sign up */
-setMode("up");
+  function setMode(mode /* 'up' | 'in' */) {
+    setStatus(signUpStatus, "");
+    setStatus(signInStatus, "");
 
-/* Agar session bo‘lsa, darhol indexga */
-(async function boot() {
+    if (mode === "in") {
+      tabSignIn.classList.add("active");
+      tabSignUp.classList.remove("active");
+      signInForm.classList.remove("hidden");
+      signUpForm.classList.add("hidden");
+      authTopLine.textContent = "Kirish";
+      hintLine.textContent = "Hisobingiz yo‘q bo‘lsa, Sign up ni bosing.";
+      signInEmail.focus();
+    } else {
+      tabSignUp.classList.add("active");
+      tabSignIn.classList.remove("active");
+      signUpForm.classList.remove("hidden");
+      signInForm.classList.add("hidden");
+      authTopLine.textContent = "Ro‘yxatdan o‘tish";
+      hintLine.textContent = "Hisobingiz bo‘lsa, Sign in ni bosing.";
+      signUpEmail.focus();
+    }
+  }
+
+  // Default: Sign up
+  setMode("up");
+
+  tabSignUp.addEventListener("click", () => setMode("up"));
+  tabSignIn.addEventListener("click", () => setMode("in"));
+
+  // ===== Supabase init (safe) =====
+  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
+
+  let supabaseClient = null;
+
   try {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) goHome();
-  } catch {
-    // ignore
-  }
-})();
-
-tabSignUp.addEventListener("click", () => setMode("up"));
-tabSignIn.addEventListener("click", () => setMode("in"));
-
-signUpForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  const email = safeTrim(signUpEmail.value);
-  const password = safeTrim(signUpPassword.value);
-  if (!email || !password) return;
-
-  setStatus(signUpStatus, "Account yaratilmoqda...");
-
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) {
-    setStatus(signUpStatus, `Xato: ${error.message}`);
+    if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.includes("PASTE_")) {
+      throw new Error("Supabase URL/anon key qo‘yilmagan yoki noto‘g‘ri.");
+    }
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    setStatus(signUpStatus, `Xato: ${e.message}`);
+    setStatus(signInStatus, `Xato: ${e.message}`);
+    // UI baribir ishlaydi; auth funksiyalari esa ishlamaydi.
     return;
   }
 
-  // Session bo‘lsa darhol indexga, bo‘lmasa confirmation yoq bo‘lishi mumkin
-  const { data } = await supabase.auth.getSession();
-  if (data?.session?.user) {
-    setStatus(signUpStatus, "Account created ✅ Redirecting...");
-    goHome();
-  } else {
-    setStatus(signUpStatus, "Account created ✅ (Email confirmation yoqilgan bo‘lishi mumkin). Endi Sign in qiling.");
+  // Agar allaqachon login bo‘lsa, indexga qaytar
+  (async () => {
+    try {
+      const { data } = await supabaseClient.auth.getSession();
+      if (data?.session?.user) goHome();
+    } catch {
+      // ignore
+    }
+  })();
+
+  // Sign up
+  signUpForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const email = safeTrim(signUpEmail.value);
+    const password = safeTrim(signUpPassword.value);
+    if (!email || !password) return;
+
+    setStatus(signUpStatus, "Account yaratilmoqda...");
+
+    const { error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/index.html`,
+      },
+    });
+
+    if (error) {
+      setStatus(signUpStatus, `Xato: ${error.message}`);
+      return;
+    }
+
+    // Session bo‘lsa darhol kirgan bo‘ladi
+    const { data } = await supabaseClient.auth.getSession();
+    if (data?.session?.user) {
+      setStatus(signUpStatus, "Account created ✅ Redirecting...");
+      goHome();
+      return;
+    }
+
+    // Session bo‘lmasa: email confirmation yoq bo‘lishi mumkin yoki boshqa policy
+    setStatus(signUpStatus, "Account created ✅ Endi Sign in qiling (yoki email tasdiqlash bo‘lishi mumkin).");
     setMode("in");
     signInEmail.value = email;
     signInPassword.focus();
-  }
-});
+  });
 
-signInForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+  // Sign in
+  signInForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  const email = safeTrim(signInEmail.value);
-  const password = safeTrim(signInPassword.value);
-  if (!email || !password) return;
+    const email = safeTrim(signInEmail.value);
+    const password = safeTrim(signInPassword.value);
+    if (!email || !password) return;
 
-  setStatus(signInStatus, "Kirilmoqda...");
+    setStatus(signInStatus, "Kirilmoqda...");
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    setStatus(signInStatus, `Xato: ${error.message}`);
-    return;
-  }
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
-  setStatus(signInStatus, "Signed in ✅ Redirecting...");
-  goHome();
+    if (error) {
+      setStatus(signInStatus, `Xato: ${error.message}`);
+      return;
+    }
+
+    setStatus(signInStatus, "Signed in ✅ Redirecting...");
+    goHome();
+  });
 });
