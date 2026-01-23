@@ -61,8 +61,8 @@ document.addEventListener("DOMContentLoaded", () => {
   tabSignIn.addEventListener("click", () => setMode("in"));
 
   // ===== Supabase init (safe) =====
-  const SUPABASE_URL = "PASTE_YOUR_SUPABASE_URL_HERE";
-  const SUPABASE_ANON_KEY = "PASTE_YOUR_SUPABASE_ANON_KEY_HERE";
+  const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
 
   let supabaseClient = null;
 
