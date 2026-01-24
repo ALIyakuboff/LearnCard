@@ -41,6 +41,22 @@
             <input id="imageInput" class="input" type="file" accept="image/*" />
           </label>
 
+          <!-- OCR mode toggle -->
+          <div class="ocr-mode">
+            <div class="muted small">OCR Mode</div>
+            <div class="segmented" role="tablist" aria-label="OCR mode">
+              <button id="modeFastBtn" class="seg-btn active" type="button" role="tab" aria-selected="true">
+                Fast
+              </button>
+              <button id="modeAccurateBtn" class="seg-btn" type="button" role="tab" aria-selected="false">
+                Accurate
+              </button>
+            </div>
+            <div id="modeHint" class="muted small mode-hint">
+              Fast: tezroq. Accurate: aniqroq (sekinroq).
+            </div>
+          </div>
+
           <div class="row">
             <button id="runOcrBtn" class="btn btn-primary" type="button">Scan (OCR)</button>
             <button id="clearScanBtn" class="btn btn-ghost" type="button">Clear</button>

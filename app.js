@@ -1,11 +1,14 @@
-/* app.js — OCR + EN→UZ translate + per-user chats (max 2) + Supabase storage */
+/* app.js — OCR + EN→UZ translate + per-user chats (max 2) + Supabase storage
+   Improvements:
+   - OCR worker is cached (initialized once)
+   - FAST / ACCURATE mode toggle
+*/
 
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
 
-  // --- DOM helpers
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
 
@@ -29,6 +32,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const wordsChips = el("wordsChips");
   const manualWord = el("manualWord");
   const addManualWordBtn = el("addManualWordBtn");
+
+  // OCR mode
+  const modeFastBtn = el("modeFastBtn");
+  const modeAccurateBtn = el("modeAccurateBtn");
+  const modeHint = el("modeHint");
 
   // Create chat
   const chatTitle = el("chatTitle");
@@ -54,7 +62,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const importFile = el("importFile");
   const cardsList = el("cardsList");
 
-  // --- status helpers
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
 
@@ -73,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
   }
 
-  // --- Supabase client
+  // Supabase
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
     setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
@@ -83,16 +90,47 @@ document.addEventListener("DOMContentLoaded", () => {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   });
 
-  // --- App state
+  // State
   let sessionUser = null;
-
-  let extractedWords = [];      // from OCR
-  let chats = [];              // user chats
-  let activeChat = null;       // selected chat object
-  let cards = [];              // cards in active chat
+  let extractedWords = [];
+  let chats = [];
+  let activeChat = null;
+  let cards = [];
   let currentIndex = 0;
 
-  // --- Auth UI updates
+  // OCR mode state
+  const MODE_KEY = "ocr_mode";
+  let ocrMode = (localStorage.getItem(MODE_KEY) || "").toLowerCase();
+  if (ocrMode !== "fast" && ocrMode !== "accurate") {
+    // default: fast on mobile, accurate on desktop
+    ocrMode = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "fast" : "accurate";
+  }
+
+  function applyModeUI() {
+    const isFast = ocrMode === "fast";
+    modeFastBtn?.classList.toggle("active", isFast);
+    modeAccurateBtn?.classList.toggle("active", !isFast);
+    modeFastBtn?.setAttribute("aria-selected", String(isFast));
+    modeAccurateBtn?.setAttribute("aria-selected", String(!isFast));
+
+    if (modeHint) {
+      modeHint.textContent = isFast
+        ? "Fast: tezroq (mobil uchun tavsiya)."
+        : "Accurate: aniqroq (biroz sekinroq).";
+    }
+  }
+
+  function setMode(m) {
+    ocrMode = m;
+    localStorage.setItem(MODE_KEY, ocrMode);
+    applyModeUI();
+  }
+
+  modeFastBtn?.addEventListener("click", () => setMode("fast"));
+  modeAccurateBtn?.addEventListener("click", () => setMode("accurate"));
+  applyModeUI();
+
+  // Auth UI
   function setSignedOutUI() {
     sessionUser = null;
 
@@ -125,14 +163,11 @@ document.addEventListener("DOMContentLoaded", () => {
   async function refreshSessionAndUI() {
     const { data } = await supabase.auth.getSession();
     const user = data?.session?.user || null;
-    if (!user) {
-      setSignedOutUI();
-      return;
-    }
+    if (!user) { setSignedOutUI(); return; }
     setSignedInUI(user);
   }
 
-  // --- Render words chips
+  // Words chips
   function renderWords() {
     if (!wordsChips) return;
 
@@ -150,12 +185,10 @@ document.addEventListener("DOMContentLoaded", () => {
       chip.className = "chip";
       chip.textContent = w;
       chip.title = "Bosib olib tashlang";
-
       chip.addEventListener("click", () => {
         extractedWords.splice(idx, 1);
         renderWords();
       });
-
       wordsChips.appendChild(chip);
     });
   }
@@ -164,10 +197,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return (w || "")
       .trim()
       .toLowerCase()
-      .replace(/[^a-z']/g, ""); // keep apostrophes
+      .replace(/[^a-z']/g, "");
   }
 
-  // --- Extract words from OCR text
   function extractWordsFromText(text) {
     const raw = (text || "").toLowerCase();
     const parts = raw.split(/[\s\n\r\t]+/g);
@@ -178,28 +210,25 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const p of parts) {
       const w = normalizeWord(p);
       if (!w) continue;
-      if (w.length < 3) continue; // ignore too short
+      if (w.length < 3) continue;
       if (seen.has(w)) continue;
       seen.add(w);
       out.push(w);
     }
-
     return out;
   }
 
-  // --- Image preprocessing for better OCR
+  // Image preprocessing
   function clamp255(x) { return Math.max(0, Math.min(255, x)); }
 
   function sharpenImageData(imgData, amount = 0.55) {
     const { data, width, height } = imgData;
     const out = new Uint8ClampedArray(data.length);
-
     const kernel = [
       1/9, 1/9, 1/9,
       1/9, 1/9, 1/9,
       1/9, 1/9, 1/9,
     ];
-
     const getIdx = (x, y) => (y * width + x) * 4;
 
     for (let y = 1; y < height - 1; y++) {
@@ -225,7 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // borders copy
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
@@ -242,7 +270,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return imgData;
   }
 
-  async function preprocessImageForOcr(file, maxSide = 1400, quality = 0.9) {
+  async function preprocessImageForOcr(file, mode) {
+    // Mode-specific defaults
+    const maxSide = mode === "fast" ? 1000 : 1400;
+    const quality = mode === "fast" ? 0.82 : 0.9;
+
     const img = new Image();
     const url = URL.createObjectURL(file);
 
@@ -268,11 +300,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, nw, nh);
 
-      // grayscale + contrast
       const imgData = ctx.getImageData(0, 0, nw, nh);
       const d = imgData.data;
 
-      const contrast = 1.25;
+      // grayscale + contrast (both modes)
+      const contrast = mode === "fast" ? 1.18 : 1.25;
       const intercept = 128 * (1 - contrast);
 
       for (let i = 0; i < d.length; i += 4) {
@@ -282,14 +314,16 @@ document.addEventListener("DOMContentLoaded", () => {
         d[i] = d[i + 1] = d[i + 2] = y;
       }
 
-      sharpenImageData(imgData, 0.55);
+      // Accurate mode: sharpen + threshold (more CPU, better for print)
+      if (mode === "accurate") {
+        sharpenImageData(imgData, 0.55);
 
-      // light threshold
-      const t = 170;
-      for (let i = 0; i < d.length; i += 4) {
-        const y = d[i];
-        const v = y > t ? 255 : 0;
-        d[i] = d[i + 1] = d[i + 2] = v;
+        const t = 170;
+        for (let i = 0; i < d.length; i += 4) {
+          const y = d[i];
+          const v = y > t ? 255 : 0;
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
       }
 
       ctx.putImageData(imgData, 0, 0);
@@ -305,65 +339,115 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // OCR Worker cache (major speed-up for 2nd/3rd scans)
+  let ocrWorker = null;
+  let ocrWorkerInitPromise = null;
+
+  async function getOcrWorker() {
+    if (ocrWorker) return ocrWorker;
+    if (ocrWorkerInitPromise) return ocrWorkerInitPromise;
+
+    ocrWorkerInitPromise = (async () => {
+      const worker = await Tesseract.createWorker({
+        logger: (m) => {
+          // logger is used during recognize; mapped progress set in runOcr()
+          // keep silent here
+        }
+      });
+
+      await worker.load();
+      await worker.loadLanguage("eng");
+      await worker.initialize("eng");
+
+      // PSM 6: Assume a single uniform block of text.
+      await worker.setParameters({ tessedit_pageseg_mode: "6" });
+
+      ocrWorker = worker;
+      return worker;
+    })();
+
+    return ocrWorkerInitPromise;
+  }
+
+  window.addEventListener("beforeunload", async () => {
+    try {
+      if (ocrWorker) await ocrWorker.terminate();
+    } catch {}
+  });
+
   async function runOcrOnFile(file) {
     if (!file) return;
 
     ocrUxShow();
-    vibrate([30]); // start
+    vibrate([25]); // start
+
+    const mode = ocrMode;
 
     try {
-      setOcrStatus("Rasm tayyorlanmoqda...");
+      setOcrStatus(`Rasm tayyorlanmoqda (${mode.toUpperCase()})...`);
       ocrUxSetProgress(2, "Preparing image...");
 
-      const processed = await preprocessImageForOcr(file);
+      const processed = await preprocessImageForOcr(file, mode);
 
-      setOcrStatus("OCR boshlanmoqda...");
+      // Init worker once
+      setOcrStatus("OCR engine tayyorlanmoqda...");
       ocrUxSetProgress(8, "Loading OCR engine...");
+      const worker = await getOcrWorker();
 
-      const worker = await Tesseract.createWorker({
-        logger: (m) => {
-          if (m?.status && typeof m?.progress === "number") {
-            const pct = Math.round(m.progress * 100);
-            const mapped = 10 + Math.round(pct * 0.9);
-            ocrUxSetProgress(mapped, `${m.status}... ${pct}%`);
-            setOcrStatus(`${m.status}... ${pct}%`);
-            if (pct === 25 || pct === 50 || pct === 75) vibrate([15]);
-          } else if (m?.status) {
-            setOcrStatus(`${m.status}...`);
-          }
+      // Recognize with progress
+      const logger = (m) => {
+        if (m?.status && typeof m?.progress === "number") {
+          const pct = Math.round(m.progress * 100);
+          const mapped = 10 + Math.round(pct * 0.9);
+          ocrUxSetProgress(mapped, `${m.status}... ${pct}%`);
+          setOcrStatus(`${m.status}... ${pct}%`);
+          if (pct === 25 || pct === 50 || pct === 75) vibrate([12]);
+        } else if (m?.status) {
+          setOcrStatus(`${m.status}...`);
         }
-      });
+      };
 
-      try {
-        await worker.load();
-        await worker.loadLanguage("eng");
-        await worker.initialize("eng");
-        await worker.setParameters({ tessedit_pageseg_mode: "6" });
+      // Temporarily patch worker logger per recognize call
+      // (Tesseract doesn't expose direct per-call logger reliably; we can emulate by re-creating worker logger,
+      // but for speed we keep worker and use simple progress text from status updates below.)
+      // As compromise: show coarse steps + final timing.
 
-        const { data } = await worker.recognize(processed);
-        const text = data?.text || "";
+      const t0 = performance.now();
+      setOcrStatus("recognizing... 0%");
+      ocrUxSetProgress(12, "recognizing...");
 
-        const words = extractWordsFromText(text);
-        extractedWords = words;
-        renderWords();
+      // Minimal progress simulation (fast UI) while Tesseract runs
+      let fake = 12;
+      const timer = setInterval(() => {
+        fake = Math.min(88, fake + (mode === "fast" ? 3 : 2));
+        ocrUxSetProgress(fake, "recognizing...");
+      }, 450);
 
-        ocrUxSetProgress(100, `Done. Words: ${words.length}`);
-        setOcrStatus(`OCR tugadi. Topildi: ${words.length} ta so‘z.`);
-        vibrate([30, 30, 30]);
-      } finally {
-        await worker.terminate();
-      }
+      const { data } = await worker.recognize(processed, {}, logger);
+
+      clearInterval(timer);
+
+      const text = data?.text || "";
+      const words = extractWordsFromText(text);
+      extractedWords = words;
+      renderWords();
+
+      const t1 = performance.now();
+      const sec = Math.max(0.1, (t1 - t0) / 1000).toFixed(1);
+
+      ocrUxSetProgress(100, `Done. Words: ${words.length}`);
+      setOcrStatus(`OCR tugadi (${sec}s). Topildi: ${words.length} ta so‘z.`);
+      vibrate([25, 25, 25]);
     } catch (e) {
       setOcrStatus(`OCR xato: ${e?.message || "unknown"}`);
       ocrUxSetProgress(0, "Failed");
       vibrate([120, 60, 120]);
     } finally {
-      setTimeout(() => ocrUxHide(), 800);
+      setTimeout(() => ocrUxHide(), 700);
     }
   }
 
-  // --- Translation (EN→UZ) - best-effort
-  // Uses MyMemory public API (rate-limited). If fails -> empty string.
+  // Translation (EN→UZ)
   async function translateWordEnUz(word) {
     const q = encodeURIComponent(word);
     const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
@@ -395,7 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return results;
   }
 
-  // --- DB: load chats
+  // DB: load chats
   async function loadChats() {
     if (!sessionUser) return;
 
@@ -474,7 +558,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function deleteChat(chatId) {
     if (!sessionUser) return;
-
     if (!confirm("Chat o‘chirilsinmi?")) return;
 
     const { error } = await supabase.from("vocab_chats").delete().eq("id", chatId);
@@ -548,17 +631,15 @@ document.addEventListener("DOMContentLoaded", () => {
     cardsList.textContent = lines.join("\n");
   }
 
-  // --- Flashcard display
+  // Flashcards
   function showFront() {
     cardBack.classList.add("hidden");
     cardFront.classList.remove("hidden");
   }
-
   function showBack() {
     cardFront.classList.add("hidden");
     cardBack.classList.remove("hidden");
   }
-
   function renderCard() {
     if (!activeChat) {
       showFront();
@@ -583,44 +664,28 @@ document.addEventListener("DOMContentLoaded", () => {
     exampleText.textContent = "";
   }
 
-  // --- Create chat (OCR words -> translate -> insert)
+  // Create chat
   async function createChatFromWords() {
-    if (!sessionUser) {
-      setCreateStatus("Avval Sign in qiling.");
-      return;
-    }
+    if (!sessionUser) { setCreateStatus("Avval Sign in qiling."); return; }
+    if (!extractedWords.length) { setCreateStatus("Avval OCR qiling yoki so‘z qo‘shing."); return; }
 
-    if (!extractedWords.length) {
-      setCreateStatus("Avval OCR qiling yoki so‘z qo‘shing.");
-      return;
-    }
-
-    // reload chats count (server truth)
     const { data: existing, error: countErr } = await supabase
       .from("vocab_chats")
-      .select("id", { count: "exact" });
+      .select("id");
 
-    if (countErr) {
-      setCreateStatus(`Xato: ${countErr.message}`);
-      return;
-    }
+    if (countErr) { setCreateStatus(`Xato: ${countErr.message}`); return; }
 
     const count = existing?.length || 0;
-    if (count >= 2) {
-      setCreateStatus("Limit: har foydalanuvchiga 2 tagacha chat mumkin.");
-      return;
-    }
+    if (count >= 2) { setCreateStatus("Limit: har foydalanuvchiga 2 tagacha chat mumkin."); return; }
 
     const title = (chatTitle.value || "").trim() || "Reading chat";
     setCreateStatus("Tarjima qilinyapti...");
 
-    // Translate with concurrency limit
     const translations = await mapLimit(extractedWords, 4, async (w) => {
       const t = await translateWordEnUz(w);
       return { en: w, uz: t };
     });
 
-    // Create chat row
     setCreateStatus("Chat yaratilmoqda...");
     const { data: chatRow, error: chatErr } = await supabase
       .from("vocab_chats")
@@ -628,12 +693,8 @@ document.addEventListener("DOMContentLoaded", () => {
       .select("id, title, created_at")
       .single();
 
-    if (chatErr) {
-      setCreateStatus(`Chat xato: ${chatErr.message}`);
-      return;
-    }
+    if (chatErr) { setCreateStatus(`Chat xato: ${chatErr.message}`); return; }
 
-    // Insert cards
     setCreateStatus("Cardlar saqlanyapti...");
     const cardRows = translations.map((x) => ({
       user_id: sessionUser.id,
@@ -643,10 +704,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }));
 
     const { error: cardsErr } = await supabase.from("vocab_cards").insert(cardRows);
-    if (cardsErr) {
-      setCreateStatus(`Card save xato: ${cardsErr.message}`);
-      return;
-    }
+    if (cardsErr) { setCreateStatus(`Card save xato: ${cardsErr.message}`); return; }
 
     setCreateStatus("✅ Tayyor. Chat yaratildi.");
     extractedWords = [];
@@ -654,17 +712,13 @@ document.addEventListener("DOMContentLoaded", () => {
     chatTitle.value = "";
 
     await loadChats();
-    // open newly created chat (it will be first due to order desc)
     const newChat = chats.find((c) => c.id === chatRow.id) || chatRow;
     await openChat(newChat);
   }
 
-  // --- Export / Import
+  // Export / Import
   function exportActiveChat() {
-    if (!activeChat) {
-      alert("Avval chat tanlang.");
-      return;
-    }
+    if (!activeChat) { alert("Avval chat tanlang."); return; }
 
     const payload = {
       title: activeChat.title || "Untitled chat",
@@ -686,24 +740,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function importChatFromFile(file) {
-    if (!sessionUser) {
-      alert("Avval Sign in qiling.");
-      return;
-    }
+    if (!sessionUser) { alert("Avval Sign in qiling."); return; }
 
-    // count chats
     const { data: existing, error: countErr } = await supabase
       .from("vocab_chats")
       .select("id");
 
-    if (countErr) {
-      alert(`Xato: ${countErr.message}`);
-      return;
-    }
-    if ((existing?.length || 0) >= 2) {
-      alert("Limit: har foydalanuvchiga 2 tagacha chat mumkin.");
-      return;
-    }
+    if (countErr) { alert(`Xato: ${countErr.message}`); return; }
+    if ((existing?.length || 0) >= 2) { alert("Limit: har foydalanuvchiga 2 tagacha chat mumkin."); return; }
 
     const txt = await file.text();
     let json;
@@ -711,11 +755,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const title = (json?.title || "Imported chat").toString().slice(0, 120);
     const list = Array.isArray(json?.cards) ? json.cards : [];
-
-    if (!list.length) {
-      alert("JSON ichida cards yo‘q.");
-      return;
-    }
+    if (!list.length) { alert("JSON ichida cards yo‘q."); return; }
 
     setCreateStatus("Import: chat yaratilmoqda...");
     const { data: chatRow, error: chatErr } = await supabase
@@ -743,7 +783,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await openChat(newChat);
   }
 
-  // --- Wire events
+  // Events
   signOutBtn.addEventListener("click", async () => {
     await supabase.auth.signOut();
     setSignedOutUI();
@@ -753,10 +793,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setOcrStatus("");
     setCreateStatus("");
     const f = imageInput.files?.[0];
-    if (!f) {
-      setOcrStatus("Avval rasm tanlang.");
-      return;
-    }
+    if (!f) { setOcrStatus("Avval rasm tanlang."); return; }
     await runOcrOnFile(f);
   });
 
@@ -790,7 +827,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   card.addEventListener("click", () => {
-    // flip by toggling hidden (no "flip" label needed)
     if (cardBack.classList.contains("hidden")) showBack();
     else showFront();
   });
@@ -827,7 +863,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await importChatFromFile(f);
   });
 
-  // --- Init
+  // Init
   (async () => {
     await refreshSessionAndUI();
     renderWords();
@@ -838,13 +874,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   })();
 
-  // Keep UI synced with auth state
+  // Sync auth state
   supabase.auth.onAuthStateChange(async (_event, session) => {
     const user = session?.user || null;
-    if (!user) {
-      setSignedOutUI();
-      return;
-    }
+    if (!user) { setSignedOutUI(); return; }
     setSignedInUI(user);
     await loadChats();
   });

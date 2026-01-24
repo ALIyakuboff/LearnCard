@@ -306,3 +306,36 @@ a.btn, a.btn:hover, a.btn:focus, a.btn:active { text-decoration: none; }
   width: 0%;
   transition: width 120ms ease;
 }
+
+/* OCR Mode toggle (mobile friendly) */
+.ocr-mode {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.seg-btn {
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.18);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.seg-btn.active {
+  background: linear-gradient(135deg, rgba(79,70,229,1), rgba(99,102,241,1));
+  border-color: rgba(79,70,229,0.45);
+}
+
+.mode-hint { margin-top: -2px; }

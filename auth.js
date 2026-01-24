@@ -71,14 +71,12 @@ document.addEventListener("DOMContentLoaded", () => {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   });
 
-  // Hash-based default tab
   const wantsSignup = (window.location.hash || "").toLowerCase().includes("signup");
   setMode(wantsSignup ? "up" : "in");
 
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
-  // If already signed in: show panel (no redirect loop)
   (async () => {
     const { data } = await supabase.auth.getSession();
     const user = data?.session?.user;
@@ -106,7 +104,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Sign up
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -127,7 +124,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Some setups require email confirmation; if session exists, redirect.
     const { data } = await supabase.auth.getSession();
     const user = data?.session?.user;
 
@@ -142,7 +138,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Sign in
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
