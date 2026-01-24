@@ -1,16 +1,20 @@
-/* app.js — OCR + EN→UZ translate + per-user chats (max 2) + Supabase storage
-   Improvements:
-   - OCR worker is cached (initialized once)
-   - FAST / ACCURATE mode toggle
-*/
+/* ===========
+  app.js (SERVER OCR)
+  - OCR: Cloudflare Worker (fast) -> OCR.space
+  - Image not stored (only sent for OCR request)
+  - Extract words -> EN→UZ translate -> create chat (max 2 enforced by DB trigger)
+  - Per-user data via Supabase RLS
+=========== */
 
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+  const OCR_WORKER_URL = cfg.OCR_WORKER_URL || "";
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
+  const safeTrim = (s) => (s || "").trim();
 
   // Header/Auth
   const userLine = el("userLine");
@@ -32,11 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const wordsChips = el("wordsChips");
   const manualWord = el("manualWord");
   const addManualWordBtn = el("addManualWordBtn");
-
-  // OCR mode
-  const modeFastBtn = el("modeFastBtn");
-  const modeAccurateBtn = el("modeAccurateBtn");
-  const modeHint = el("modeHint");
 
   // Create chat
   const chatTitle = el("chatTitle");
@@ -62,13 +61,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const importFile = el("importFile");
   const cardsList = el("cardsList");
 
+  // Status helpers
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
 
   function ocrUxShow() {
     ocrUx?.classList.remove("hidden");
     if (ocrProgressBar) ocrProgressBar.style.width = "0%";
-    if (ocrProgressText) ocrProgressText.textContent = "Preparing...";
+    if (ocrProgressText) ocrProgressText.textContent = "Starting...";
   }
   function ocrUxHide() { ocrUx?.classList.add("hidden"); }
   function ocrUxSetProgress(pct, text) {
@@ -80,10 +80,13 @@ document.addEventListener("DOMContentLoaded", () => {
     try { if (navigator.vibrate) navigator.vibrate(pattern); } catch {}
   }
 
-  // Supabase
+  // Supabase init
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
     setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
+  }
+  if (!OCR_WORKER_URL.startsWith("https://")) {
+    setOcrStatus("OCR worker URL noto‘g‘ri. config.js -> OCR_WORKER_URL ni tekshiring.");
   }
 
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -97,38 +100,6 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeChat = null;
   let cards = [];
   let currentIndex = 0;
-
-  // OCR mode state
-  const MODE_KEY = "ocr_mode";
-  let ocrMode = (localStorage.getItem(MODE_KEY) || "").toLowerCase();
-  if (ocrMode !== "fast" && ocrMode !== "accurate") {
-    // default: fast on mobile, accurate on desktop
-    ocrMode = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "fast" : "accurate";
-  }
-
-  function applyModeUI() {
-    const isFast = ocrMode === "fast";
-    modeFastBtn?.classList.toggle("active", isFast);
-    modeAccurateBtn?.classList.toggle("active", !isFast);
-    modeFastBtn?.setAttribute("aria-selected", String(isFast));
-    modeAccurateBtn?.setAttribute("aria-selected", String(!isFast));
-
-    if (modeHint) {
-      modeHint.textContent = isFast
-        ? "Fast: tezroq (mobil uchun tavsiya)."
-        : "Accurate: aniqroq (biroz sekinroq).";
-    }
-  }
-
-  function setMode(m) {
-    ocrMode = m;
-    localStorage.setItem(MODE_KEY, ocrMode);
-    applyModeUI();
-  }
-
-  modeFastBtn?.addEventListener("click", () => setMode("fast"));
-  modeAccurateBtn?.addEventListener("click", () => setMode("accurate"));
-  applyModeUI();
 
   // Auth UI
   function setSignedOutUI() {
@@ -167,7 +138,11 @@ document.addEventListener("DOMContentLoaded", () => {
     setSignedInUI(user);
   }
 
-  // Words chips
+  // Words
+  function normalizeWord(w) {
+    return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
+  }
+
   function renderWords() {
     if (!wordsChips) return;
 
@@ -193,13 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function normalizeWord(w) {
-    return (w || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z']/g, "");
-  }
-
   function extractWordsFromText(text) {
     const raw = (text || "").toLowerCase();
     const parts = raw.split(/[\s\n\r\t]+/g);
@@ -215,250 +183,78 @@ document.addEventListener("DOMContentLoaded", () => {
       seen.add(w);
       out.push(w);
     }
-    return out;
+
+    return out.slice(0, 150); // cap
   }
 
-  // Image preprocessing
-  function clamp255(x) { return Math.max(0, Math.min(255, x)); }
-
-  function sharpenImageData(imgData, amount = 0.55) {
-    const { data, width, height } = imgData;
-    const out = new Uint8ClampedArray(data.length);
-    const kernel = [
-      1/9, 1/9, 1/9,
-      1/9, 1/9, 1/9,
-      1/9, 1/9, 1/9,
-    ];
-    const getIdx = (x, y) => (y * width + x) * 4;
-
-    for (let y = 1; y < height - 1; y++) {
-      for (let x = 1; x < width - 1; x++) {
-        let br = 0, bg = 0, bb = 0;
-        let ki = 0;
-
-        for (let ky = -1; ky <= 1; ky++) {
-          for (let kx = -1; kx <= 1; kx++) {
-            const idx = getIdx(x + kx, y + ky);
-            const w = kernel[ki++];
-            br += data[idx] * w;
-            bg += data[idx + 1] * w;
-            bb += data[idx + 2] * w;
-          }
-        }
-
-        const idx = getIdx(x, y);
-        out[idx]     = clamp255(data[idx]     + amount * (data[idx]     - br));
-        out[idx + 1] = clamp255(data[idx + 1] + amount * (data[idx + 1] - bg));
-        out[idx + 2] = clamp255(data[idx + 2] + amount * (data[idx + 2] - bb));
-        out[idx + 3] = data[idx + 3];
-      }
+  // SERVER OCR
+  async function runServerOcr(file) {
+    if (!OCR_WORKER_URL.startsWith("https://")) {
+      setOcrStatus("OCR worker URL yo‘q. config.js ni tekshiring.");
+      return;
     }
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
-          const idx = (y * width + x) * 4;
-          out[idx] = data[idx];
-          out[idx + 1] = data[idx + 1];
-          out[idx + 2] = data[idx + 2];
-          out[idx + 3] = data[idx + 3];
-        }
-      }
-    }
-
-    imgData.data.set(out);
-    return imgData;
-  }
-
-  async function preprocessImageForOcr(file, mode) {
-    // Mode-specific defaults
-    const maxSide = mode === "fast" ? 1000 : 1400;
-    const quality = mode === "fast" ? 0.82 : 0.9;
-
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    try {
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = url;
-      });
-
-      const w = img.naturalWidth || img.width;
-      const h = img.naturalHeight || img.height;
-      if (!w || !h) return file;
-
-      const scale = Math.min(1, maxSide / Math.max(w, h));
-      const nw = Math.round(w * scale);
-      const nh = Math.round(h * scale);
-
-      const canvas = document.createElement("canvas");
-      canvas.width = nw;
-      canvas.height = nh;
-
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, nw, nh);
-
-      const imgData = ctx.getImageData(0, 0, nw, nh);
-      const d = imgData.data;
-
-      // grayscale + contrast (both modes)
-      const contrast = mode === "fast" ? 1.18 : 1.25;
-      const intercept = 128 * (1 - contrast);
-
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i + 1], b = d[i + 2];
-        let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        y = clamp255(y * contrast + intercept);
-        d[i] = d[i + 1] = d[i + 2] = y;
-      }
-
-      // Accurate mode: sharpen + threshold (more CPU, better for print)
-      if (mode === "accurate") {
-        sharpenImageData(imgData, 0.55);
-
-        const t = 170;
-        for (let i = 0; i < d.length; i += 4) {
-          const y = d[i];
-          const v = y > t ? 255 : 0;
-          d[i] = d[i + 1] = d[i + 2] = v;
-        }
-      }
-
-      ctx.putImageData(imgData, 0, 0);
-
-      const blob = await new Promise((resolve) => {
-        canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
-      });
-
-      if (!blob) return file;
-      return new File([blob], "ocr_preprocessed.jpg", { type: "image/jpeg" });
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  // OCR Worker cache (major speed-up for 2nd/3rd scans)
-  let ocrWorker = null;
-  let ocrWorkerInitPromise = null;
-
-  async function getOcrWorker() {
-    if (ocrWorker) return ocrWorker;
-    if (ocrWorkerInitPromise) return ocrWorkerInitPromise;
-
-    ocrWorkerInitPromise = (async () => {
-      const worker = await Tesseract.createWorker({
-        logger: (m) => {
-          // logger is used during recognize; mapped progress set in runOcr()
-          // keep silent here
-        }
-      });
-
-      await worker.load();
-      await worker.loadLanguage("eng");
-      await worker.initialize("eng");
-
-      // PSM 6: Assume a single uniform block of text.
-      await worker.setParameters({ tessedit_pageseg_mode: "6" });
-
-      ocrWorker = worker;
-      return worker;
-    })();
-
-    return ocrWorkerInitPromise;
-  }
-
-  window.addEventListener("beforeunload", async () => {
-    try {
-      if (ocrWorker) await ocrWorker.terminate();
-    } catch {}
-  });
-
-  async function runOcrOnFile(file) {
-    if (!file) return;
 
     ocrUxShow();
-    vibrate([25]); // start
-
-    const mode = ocrMode;
+    vibrate([20]);
 
     try {
-      setOcrStatus(`Rasm tayyorlanmoqda (${mode.toUpperCase()})...`);
-      ocrUxSetProgress(2, "Preparing image...");
+      setOcrStatus("Uploading image (not stored)...");
+      ocrUxSetProgress(15, "Uploading...");
 
-      const processed = await preprocessImageForOcr(file, mode);
+      const fd = new FormData();
+      fd.append("image", file);
 
-      // Init worker once
-      setOcrStatus("OCR engine tayyorlanmoqda...");
-      ocrUxSetProgress(8, "Loading OCR engine...");
-      const worker = await getOcrWorker();
+      const res = await fetch(OCR_WORKER_URL, {
+        method: "POST",
+        body: fd,
+      });
 
-      // Recognize with progress
-      const logger = (m) => {
-        if (m?.status && typeof m?.progress === "number") {
-          const pct = Math.round(m.progress * 100);
-          const mapped = 10 + Math.round(pct * 0.9);
-          ocrUxSetProgress(mapped, `${m.status}... ${pct}%`);
-          setOcrStatus(`${m.status}... ${pct}%`);
-          if (pct === 25 || pct === 50 || pct === 75) vibrate([12]);
-        } else if (m?.status) {
-          setOcrStatus(`${m.status}...`);
-        }
-      };
+      ocrUxSetProgress(55, "OCR on server...");
 
-      // Temporarily patch worker logger per recognize call
-      // (Tesseract doesn't expose direct per-call logger reliably; we can emulate by re-creating worker logger,
-      // but for speed we keep worker and use simple progress text from status updates below.)
-      // As compromise: show coarse steps + final timing.
+      const json = await res.json().catch(() => ({}));
 
-      const t0 = performance.now();
-      setOcrStatus("recognizing... 0%");
-      ocrUxSetProgress(12, "recognizing...");
+      if (!res.ok) {
+        setOcrStatus(`OCR server error: ${json?.error || res.status}`);
+        if (json?.providerMessage) setOcrStatus(`OCR server error: ${json.error} (${json.providerMessage})`);
+        ocrUxSetProgress(0, "Failed");
+        vibrate([120, 60, 120]);
+        return;
+      }
 
-      // Minimal progress simulation (fast UI) while Tesseract runs
-      let fake = 12;
-      const timer = setInterval(() => {
-        fake = Math.min(88, fake + (mode === "fast" ? 3 : 2));
-        ocrUxSetProgress(fake, "recognizing...");
-      }, 450);
+      const text = json?.text || "";
+      if (!text.trim()) {
+        setOcrStatus("OCR natija bo‘sh. Rasm tiniqroq bo‘lsin yoki matnga yaqinroq oling.");
+        ocrUxSetProgress(100, "Done (empty)");
+        return;
+      }
 
-      const { data } = await worker.recognize(processed, {}, logger);
-
-      clearInterval(timer);
-
-      const text = data?.text || "";
       const words = extractWordsFromText(text);
+
       extractedWords = words;
       renderWords();
 
-      const t1 = performance.now();
-      const sec = Math.max(0.1, (t1 - t0) / 1000).toFixed(1);
-
-      ocrUxSetProgress(100, `Done. Words: ${words.length}`);
-      setOcrStatus(`OCR tugadi (${sec}s). Topildi: ${words.length} ta so‘z.`);
-      vibrate([25, 25, 25]);
+      setOcrStatus(`Done. Words: ${words.length}`);
+      ocrUxSetProgress(100, `Done. ${words.length} words`);
+      vibrate([20, 20, 20]);
     } catch (e) {
-      setOcrStatus(`OCR xato: ${e?.message || "unknown"}`);
+      setOcrStatus(`OCR error: ${e?.message || "unknown"}`);
       ocrUxSetProgress(0, "Failed");
       vibrate([120, 60, 120]);
     } finally {
-      setTimeout(() => ocrUxHide(), 700);
+      setTimeout(() => ocrUxHide(), 600);
     }
   }
 
-  // Translation (EN→UZ)
+  // Translation EN→UZ
   async function translateWordEnUz(word) {
     const q = encodeURIComponent(word);
     const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
-
     try {
       const res = await fetch(url, { method: "GET" });
       if (!res.ok) return "";
       const json = await res.json();
       const t = json?.responseData?.translatedText;
-      if (!t || typeof t !== "string") return "";
-      return t.trim();
+      return typeof t === "string" ? t.trim() : "";
     } catch {
       return "";
     }
@@ -467,19 +263,17 @@ document.addEventListener("DOMContentLoaded", () => {
   async function mapLimit(items, limit, asyncFn) {
     const results = new Array(items.length);
     let i = 0;
-
     const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (i < items.length) {
         const idx = i++;
         results[idx] = await asyncFn(items[idx], idx);
       }
     });
-
     await Promise.all(runners);
     return results;
   }
 
-  // DB: load chats
+  // DB: chats/cards
   async function loadChats() {
     if (!sessionUser) return;
 
@@ -547,7 +341,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       actions.appendChild(openBtn);
       actions.appendChild(delBtn);
-
       row2.appendChild(actions);
 
       item.appendChild(row1);
@@ -573,9 +366,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function openChat(chat) {
     if (!sessionUser) return;
-
-    setCreateStatus("");
-    setOcrStatus("");
 
     activeChat = chat;
     setActiveChat(chat);
@@ -611,7 +401,6 @@ document.addEventListener("DOMContentLoaded", () => {
       renderCardsList();
       return;
     }
-
     activeChatTitle.textContent = chat.title || "Untitled chat";
     activeChatMeta.textContent = "Active";
   }
@@ -621,17 +410,14 @@ document.addEventListener("DOMContentLoaded", () => {
       cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
       return;
     }
-
     if (!cards.length) {
       cardsList.textContent = "Bu chatda card yo‘q.";
       return;
     }
-
     const lines = cards.map((c, i) => `${i + 1}. ${c.en}  →  ${c.uz || "(uz tarjima yo‘q)"}`);
     cardsList.textContent = lines.join("\n");
   }
 
-  // Flashcards
   function showFront() {
     cardBack.classList.add("hidden");
     cardFront.classList.remove("hidden");
@@ -640,6 +426,7 @@ document.addEventListener("DOMContentLoaded", () => {
     cardFront.classList.add("hidden");
     cardBack.classList.remove("hidden");
   }
+
   function renderCard() {
     if (!activeChat) {
       showFront();
@@ -648,7 +435,6 @@ document.addEventListener("DOMContentLoaded", () => {
       exampleText.textContent = "";
       return;
     }
-
     if (!cards.length) {
       showFront();
       frontText.textContent = "Bu chatda card yo‘q.";
@@ -656,7 +442,6 @@ document.addEventListener("DOMContentLoaded", () => {
       exampleText.textContent = "";
       return;
     }
-
     const c = cards[currentIndex];
     showFront();
     frontText.textContent = c.en || "—";
@@ -664,24 +449,18 @@ document.addEventListener("DOMContentLoaded", () => {
     exampleText.textContent = "";
   }
 
-  // Create chat
   async function createChatFromWords() {
     if (!sessionUser) { setCreateStatus("Avval Sign in qiling."); return; }
     if (!extractedWords.length) { setCreateStatus("Avval OCR qiling yoki so‘z qo‘shing."); return; }
 
-    const { data: existing, error: countErr } = await supabase
-      .from("vocab_chats")
-      .select("id");
-
+    const { data: existing, error: countErr } = await supabase.from("vocab_chats").select("id");
     if (countErr) { setCreateStatus(`Xato: ${countErr.message}`); return; }
+    if ((existing?.length || 0) >= 2) { setCreateStatus("Limit: 2 ta chat."); return; }
 
-    const count = existing?.length || 0;
-    if (count >= 2) { setCreateStatus("Limit: har foydalanuvchiga 2 tagacha chat mumkin."); return; }
-
-    const title = (chatTitle.value || "").trim() || "Reading chat";
+    const title = safeTrim(chatTitle.value) || "Reading chat";
     setCreateStatus("Tarjima qilinyapti...");
 
-    const translations = await mapLimit(extractedWords, 4, async (w) => {
+    const translations = await mapLimit(extractedWords, 5, async (w) => {
       const t = await translateWordEnUz(w);
       return { en: w, uz: t };
     });
@@ -716,38 +495,30 @@ document.addEventListener("DOMContentLoaded", () => {
     await openChat(newChat);
   }
 
-  // Export / Import
   function exportActiveChat() {
     if (!activeChat) { alert("Avval chat tanlang."); return; }
-
     const payload = {
       title: activeChat.title || "Untitled chat",
       created_at: activeChat.created_at,
       cards: (cards || []).map((c) => ({ en: c.en, uz: c.uz || "" })),
     };
-
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement("a");
     a.href = url;
     a.download = `${(activeChat.title || "chat").replace(/\s+/g, "_")}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-
     URL.revokeObjectURL(url);
   }
 
   async function importChatFromFile(file) {
     if (!sessionUser) { alert("Avval Sign in qiling."); return; }
 
-    const { data: existing, error: countErr } = await supabase
-      .from("vocab_chats")
-      .select("id");
-
+    const { data: existing, error: countErr } = await supabase.from("vocab_chats").select("id");
     if (countErr) { alert(`Xato: ${countErr.message}`); return; }
-    if ((existing?.length || 0) >= 2) { alert("Limit: har foydalanuvchiga 2 tagacha chat mumkin."); return; }
+    if ((existing?.length || 0) >= 2) { alert("Limit: 2 ta chat."); return; }
 
     const txt = await file.text();
     let json;
@@ -792,9 +563,13 @@ document.addEventListener("DOMContentLoaded", () => {
   runOcrBtn.addEventListener("click", async () => {
     setOcrStatus("");
     setCreateStatus("");
+    if (!sessionUser) {
+      setOcrStatus("Avval Sign in qiling.");
+      return;
+    }
     const f = imageInput.files?.[0];
     if (!f) { setOcrStatus("Avval rasm tanlang."); return; }
-    await runOcrOnFile(f);
+    await runServerOcr(f);
   });
 
   clearScanBtn.addEventListener("click", () => {
@@ -868,10 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await refreshSessionAndUI();
     renderWords();
     renderCard();
-
-    if (sessionUser) {
-      await loadChats();
-    }
+    if (sessionUser) await loadChats();
   })();
 
   // Sync auth state
@@ -881,4 +653,55 @@ document.addEventListener("DOMContentLoaded", () => {
     setSignedInUI(user);
     await loadChats();
   });
+
+  // Helpers used above
+  async function runServerOcr(file) {
+    if (!OCR_WORKER_URL.startsWith("https://")) {
+      setOcrStatus("OCR worker URL yo‘q. config.js ni tekshiring.");
+      return;
+    }
+
+    ocrUxShow();
+    vibrate([20]);
+
+    try {
+      setOcrStatus("Uploading image (not stored)...");
+      ocrUxSetProgress(15, "Uploading...");
+
+      const fd = new FormData();
+      fd.append("image", file);
+
+      const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
+      ocrUxSetProgress(60, "OCR on server...");
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setOcrStatus(`OCR server error: ${json?.error || res.status}`);
+        ocrUxSetProgress(0, "Failed");
+        vibrate([120, 60, 120]);
+        return;
+      }
+
+      const text = (json?.text || "").trim();
+      if (!text) {
+        setOcrStatus("OCR natija bo‘sh. Rasm tiniqroq bo‘lsin yoki matnga yaqinroq oling.");
+        ocrUxSetProgress(100, "Done (empty)");
+        return;
+      }
+
+      const words = extractWordsFromText(text);
+      extractedWords = words;
+      renderWords();
+
+      setOcrStatus(`Done. Words: ${words.length}`);
+      ocrUxSetProgress(100, `Done. ${words.length} words`);
+      vibrate([20, 20, 20]);
+    } catch (e) {
+      setOcrStatus(`OCR error: ${e?.message || "unknown"}`);
+      ocrUxSetProgress(0, "Failed");
+      vibrate([120, 60, 120]);
+    } finally {
+      setTimeout(() => ocrUxHide(), 600);
+    }
+  }
 });
