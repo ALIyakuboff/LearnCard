@@ -3,10 +3,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  });
-
   const el = (id) => document.getElementById(id);
 
   const authTopLine = el("authTopLine");
@@ -51,18 +47,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // sanity
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
-    setStatus(signUpStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
-    setStatus(signInStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
+    setStatus(signUpStatus, "Supabase config noto‘g‘ri: config.js ni tekshiring.");
+    setStatus(signInStatus, "Supabase config noto‘g‘ri: config.js ni tekshiring.");
     return;
   }
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
 
   setMode("up");
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
-  // already logged in?
   (async () => {
     const { data } = await supabase.auth.getSession();
     if (data?.session?.user) goHome();
@@ -113,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // verify session exists
+    // session check (agar shu null bo‘lsa — cookie/storage bloklangan)
     const { data } = await supabase.auth.getSession();
     if (!data?.session?.user) {
       setStatus(signInStatus, "Login bo‘ldi, lekin session olinmadi. Brauzer cookie/storage bloklangan bo‘lishi mumkin.");
