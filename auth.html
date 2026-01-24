@@ -13,7 +13,7 @@
         <div class="logo">VC</div>
         <div class="brand-text">
           <h1>Vocab Cards</h1>
-          <p class="muted" id="authTopLine">Ro‘yxatdan o‘tish</p>
+          <p class="muted" id="authTopLine">Kirish / Ro‘yxatdan o‘tish</p>
         </div>
       </div>
 
@@ -23,12 +23,28 @@
     </header>
 
     <main class="container auth-wrap">
-      <div class="auth-tabs">
+      <!-- Already signed in panel -->
+      <section id="alreadyPanel" class="panel hidden">
+        <h2>Allaqachon kirilgansiz</h2>
+        <p class="muted small" id="alreadyText">—</p>
+
+        <div class="row" style="margin-top:10px;">
+          <button id="continueBtn" class="btn btn-primary" type="button">Continue</button>
+          <button id="logoutBtn" class="btn btn-ghost" type="button">Sign out</button>
+        </div>
+
+        <p class="muted small" style="margin-top:10px;">
+          Agar boshqa account bilan kirmoqchi bo‘lsangiz, avval Sign out qiling.
+        </p>
+      </section>
+
+      <!-- Tabs -->
+      <div id="tabsBlock" class="auth-tabs">
         <button id="tabSignUp" class="btn auth-tab active" type="button">Sign up</button>
         <button id="tabSignIn" class="btn auth-tab" type="button">Sign in</button>
       </div>
 
-      <section class="panel">
+      <section id="formsPanel" class="panel">
         <form id="signUpForm" class="form">
           <h2 style="margin-bottom: 6px;">Sign up</h2>
 
@@ -75,7 +91,7 @@
     </main>
 
     <footer class="container footer muted">
-      <p>Login bo‘lgach, avtomatik index.html’ga qaytasiz.</p>
+      <p>Login bo‘lgach, Continue orqali index.html’ga o‘tasiz.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

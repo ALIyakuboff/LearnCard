@@ -3,7 +3,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
 
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+
   const el = (id) => document.getElementById(id);
+
+  const alreadyPanel = el("alreadyPanel");
+  const alreadyText = el("alreadyText");
+  const continueBtn = el("continueBtn");
+  const logoutBtn = el("logoutBtn");
+
+  const tabsBlock = el("tabsBlock");
+  const formsPanel = el("formsPanel");
 
   const authTopLine = el("authTopLine");
   const hintLine = el("hintLine");
@@ -47,25 +59,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // sanity
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
-    setStatus(signUpStatus, "Supabase config noto‘g‘ri: config.js ni tekshiring.");
-    setStatus(signInStatus, "Supabase config noto‘g‘ri: config.js ni tekshiring.");
+    setStatus(signUpStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
+    setStatus(signInStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
   }
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  });
-
+  // Tabs
   setMode("up");
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
+  // If already signed in: show panel, hide forms
   (async () => {
     const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) goHome();
+    const user = data?.session?.user;
+    if (user) {
+      alreadyPanel.classList.remove("hidden");
+      formsPanel.classList.add("hidden");
+      tabsBlock.classList.add("hidden");
+      alreadyText.textContent = `Signed in as: ${user.email}`;
+    }
   })();
 
+  continueBtn?.addEventListener("click", () => goHome());
+
+  logoutBtn?.addEventListener("click", async () => {
+    setStatus(signInStatus, "");
+    setStatus(signUpStatus, "");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // show forms again
+      alreadyPanel.classList.add("hidden");
+      formsPanel.classList.remove("hidden");
+      tabsBlock.classList.remove("hidden");
+      setMode("in");
+    } catch (e) {
+      alreadyText.textContent = `Sign out xato: ${e?.message || "unknown"}`;
+    }
+  });
+
+  // Sign up
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = safeTrim(signUpEmail.value);
@@ -85,10 +121,14 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // If session exists, show already panel (not auto redirect)
     const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) {
-      setStatus(signUpStatus, "Account created ✅ Redirecting...");
-      goHome();
+    const user = data?.session?.user;
+    if (user) {
+      alreadyPanel.classList.remove("hidden");
+      formsPanel.classList.add("hidden");
+      tabsBlock.classList.add("hidden");
+      alreadyText.textContent = `Signed in as: ${user.email}`;
     } else {
       setStatus(signUpStatus, "Account created ✅ Endi Sign in qiling (yoki email tasdiqlash bo‘lishi mumkin).");
       setMode("in");
@@ -97,6 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Sign in
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = safeTrim(signInEmail.value);
@@ -111,14 +152,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // session check (agar shu null bo‘lsa — cookie/storage bloklangan)
     const { data } = await supabase.auth.getSession();
-    if (!data?.session?.user) {
-      setStatus(signInStatus, "Login bo‘ldi, lekin session olinmadi. Brauzer cookie/storage bloklangan bo‘lishi mumkin.");
+    const user = data?.session?.user;
+
+    if (!user) {
+      setStatus(signInStatus, "Login bo‘ldi, lekin session olinmadi. Cookie/storage bloklangan bo‘lishi mumkin.");
       return;
     }
 
-    setStatus(signInStatus, "Signed in ✅ Redirecting...");
-    goHome();
+    // show already panel
+    alreadyPanel.classList.remove("hidden");
+    formsPanel.classList.add("hidden");
+    tabsBlock.classList.add("hidden");
+    alreadyText.textContent = `Signed in as: ${user.email}`;
   });
 });
