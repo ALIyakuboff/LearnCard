@@ -1,14 +1,18 @@
 /* ===========
   app.js
-  - Mobile-first OCR in browser (no image upload/storage)
+  - OCR in browser (no image upload/storage)
   - Extract words -> EN->UZ translate -> save as Chat (max 2 per user)
   - Each user sees only own chats/cards (RLS)
   - Flashcard view per selected chat
 =========== */
 
-const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const cfg = window.APP_CONFIG || {};
+const SUPABASE_URL = cfg.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
 
 const el = (id) => document.getElementById(id);
 
@@ -385,7 +389,6 @@ function extractWordsFromText(text) {
   return out.slice(0, 120);
 }
 
-// Mobil uchun rasmni kichraytirib beramiz (OCR tezlashadi, RAM kam yeydi)
 async function downscaleImageToBlob(file, maxSide = 1400, quality = 0.85) {
   const img = new Image();
   const url = URL.createObjectURL(file);
@@ -406,7 +409,6 @@ async function downscaleImageToBlob(file, maxSide = 1400, quality = 0.85) {
     const nw = Math.round(w * scale);
     const nh = Math.round(h * scale);
 
-    // Agar rasm allaqachon kichik bo‘lsa, qaytaramiz
     if (scale >= 0.98) return file;
 
     const canvas = document.createElement("canvas");
@@ -417,15 +419,10 @@ async function downscaleImageToBlob(file, maxSide = 1400, quality = 0.85) {
     ctx.drawImage(img, 0, 0, nw, nh);
 
     const blob = await new Promise((resolve) => {
-      canvas.toBlob(
-        (b) => resolve(b),
-        "image/jpeg",
-        quality
-      );
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
     });
 
     if (!blob) return file;
-
     return new File([blob], "ocr.jpg", { type: "image/jpeg" });
   } finally {
     URL.revokeObjectURL(url);
@@ -433,11 +430,9 @@ async function downscaleImageToBlob(file, maxSide = 1400, quality = 0.85) {
 }
 
 async function runOcrOnFile(file) {
-  // 1) Resize
   setOcrStatus("Rasm tayyorlanmoqda...");
   const processed = await downscaleImageToBlob(file);
 
-  // 2) Tesseract init (v5 proper)
   setOcrStatus("OCR boshlanmoqda...");
 
   const worker = await Tesseract.createWorker({
@@ -456,7 +451,6 @@ async function runOcrOnFile(file) {
     await worker.loadLanguage("eng");
     await worker.initialize("eng");
 
-    // Helpful for book photos
     await worker.setParameters({
       tessedit_pageseg_mode: "6",
     });
@@ -512,10 +506,7 @@ async function translateWordsBatch(words) {
 async function createChatWithCards(title, wordPairs) {
   const { data: chatData, error: chatErr } = await supabase
     .from("vocab_chats")
-    .insert({
-      user_id: sessionUser.id,
-      title,
-    })
+    .insert({ user_id: sessionUser.id, title })
     .select("id, title, created_at")
     .single();
 
@@ -556,15 +547,9 @@ signOutBtn.addEventListener("click", async () => {
 });
 
 runOcrBtn.addEventListener("click", async () => {
-  if (!sessionUser) {
-    setOcrStatus("Avval Sign in qiling.");
-    return;
-  }
+  if (!sessionUser) { setOcrStatus("Avval Sign in qiling."); return; }
   const file = imageInput.files?.[0];
-  if (!file) {
-    setOcrStatus("Iltimos rasm tanlang.");
-    return;
-  }
+  if (!file) { setOcrStatus("Iltimos rasm tanlang."); return; }
   await runOcrOnFile(file);
 });
 
@@ -589,14 +574,8 @@ addManualWordBtn.addEventListener("click", () => {
 });
 
 createChatBtn.addEventListener("click", async () => {
-  if (!sessionUser) {
-    setCreateStatus("Avval Sign in qiling.");
-    return;
-  }
-  if (extractedWords.length === 0) {
-    setCreateStatus("So‘zlar yo‘q. Avval OCR qiling yoki manual qo‘shing.");
-    return;
-  }
+  if (!sessionUser) { setCreateStatus("Avval Sign in qiling."); return; }
+  if (extractedWords.length === 0) { setCreateStatus("So‘zlar yo‘q. Avval OCR qiling yoki manual qo‘shing."); return; }
 
   if (chats.length >= 2) {
     setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chirib, keyin yarating.");
@@ -629,10 +608,7 @@ createChatBtn.addEventListener("click", async () => {
 
 cardEl.addEventListener("click", () => flip());
 cardEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    e.preventDefault();
-    flip();
-  }
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); }
 });
 
 prevBtn.addEventListener("click", () => {
@@ -650,14 +626,8 @@ nextBtn.addEventListener("click", () => {
 });
 
 exportBtn.addEventListener("click", () => {
-  if (!sessionUser) {
-    setCreateStatus("Export uchun Sign in qiling.");
-    return;
-  }
-  if (!activeChatId) {
-    setCreateStatus("Export uchun chat tanlang.");
-    return;
-  }
+  if (!sessionUser) { setCreateStatus("Export uchun Sign in qiling."); return; }
+  if (!activeChatId) { setCreateStatus("Export uchun chat tanlang."); return; }
 
   const payload = {
     chat: chats.find((c) => c.id === activeChatId) || null,
@@ -677,10 +647,7 @@ exportBtn.addEventListener("click", () => {
 });
 
 importBtn.addEventListener("click", () => {
-  if (!sessionUser) {
-    setCreateStatus("Import uchun Sign in qiling.");
-    return;
-  }
+  if (!sessionUser) { setCreateStatus("Import uchun Sign in qiling."); return; }
   importFile.click();
 });
 
@@ -704,16 +671,10 @@ importFile.addEventListener("change", async () => {
 
     const pairs = cards
       .filter((c) => c && typeof c.word === "string" && typeof c.translation === "string")
-      .map((c) => ({
-        word: safeTrim(c.word).toLowerCase(),
-        translation: safeTrim(c.translation),
-      }))
+      .map((c) => ({ word: safeTrim(c.word).toLowerCase(), translation: safeTrim(c.translation) }))
       .filter((c) => c.word && c.translation);
 
-    if (pairs.length === 0) {
-      setCreateStatus("Import xato: cards topilmadi.");
-      return;
-    }
+    if (pairs.length === 0) { setCreateStatus("Import xato: cards topilmadi."); return; }
 
     setCreateStatus("Import: chat yaratilmoqda...");
     const newChat = await createChatWithCards(title, pairs);
@@ -733,6 +694,11 @@ importFile.addEventListener("change", async () => {
  *  Init
  *  ========================= */
 (async function init() {
+  // show clear config error early
+  if (!SUPABASE_URL.startsWith("https://") || !SUPABASE_ANON_KEY) {
+    setOcrStatus("Supabase config noto‘g‘ri. config.js ni tekshiring.");
+  }
+
   extractedWords = [];
   renderWords();
   renderChats();

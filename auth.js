@@ -1,21 +1,16 @@
-/* ===========
-  auth.js
-  - Default: Sign up tab
-  - Switch to Sign in
-  - After success -> index.html (same host)
-=========== */
-
 document.addEventListener("DOMContentLoaded", () => {
-  const SUPABASE_URL = "https://ymkodbrbeqiagkbowvde.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_eJPZtkvStgEY1D35FmANsA_lg6LO2y-";
+  const cfg = window.APP_CONFIG || {};
+  const SUPABASE_URL = cfg.SUPABASE_URL || "";
+  const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
 
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
 
   const el = (id) => document.getElementById(id);
 
   const authTopLine = el("authTopLine");
   const hintLine = el("hintLine");
-
   const tabSignUp = el("tabSignUp");
   const tabSignIn = el("tabSignIn");
 
@@ -31,12 +26,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function safeTrim(s) { return (s || "").trim(); }
   function setStatus(node, msg) { node.className = "status muted"; node.textContent = msg || ""; }
+  function goHome() { window.location.href = `${window.location.origin}/index.html`; }
 
-  function goHome() {
-    window.location.href = `${window.location.origin}/index.html`;
-  }
-
-  function setMode(mode /* 'up' | 'in' */) {
+  function setMode(mode) {
     setStatus(signUpStatus, "");
     setStatus(signInStatus, "");
 
@@ -59,7 +51,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // default
+  // sanity
+  if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
+    setStatus(signUpStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
+    setStatus(signInStatus, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
+    return;
+  }
+
   setMode("up");
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
@@ -72,7 +70,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     const email = safeTrim(signUpEmail.value);
     const password = safeTrim(signUpPassword.value);
     if (!email || !password) return;
@@ -104,7 +101,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-
     const email = safeTrim(signInEmail.value);
     const password = safeTrim(signInPassword.value);
     if (!email || !password) return;
@@ -114,6 +110,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setStatus(signInStatus, `Xato: ${error.message}`);
+      return;
+    }
+
+    // verify session exists
+    const { data } = await supabase.auth.getSession();
+    if (!data?.session?.user) {
+      setStatus(signInStatus, "Login bo‘ldi, lekin session olinmadi. Brauzer cookie/storage bloklangan bo‘lishi mumkin.");
       return;
     }
 

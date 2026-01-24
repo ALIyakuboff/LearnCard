@@ -48,7 +48,6 @@ body {
 
 h1 { margin: 0; font-size: 16px; line-height: 1.2; }
 h2 { margin: 0 0 10px 0; font-size: 15px; }
-
 #userLine { margin-top: 2px; font-size: 12px; }
 
 .header-actions { display: flex; align-items: flex-start; gap: 10px; }
@@ -192,7 +191,7 @@ a.btn, a.btn:hover, a.btn:focus, a.btn:active { text-decoration: none; }
   white-space: pre-wrap;
 }
 
-/* Chips for extracted words */
+/* Chips */
 .chips {
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.04);
@@ -204,7 +203,6 @@ a.btn, a.btn:hover, a.btn:focus, a.btn:active { text-decoration: none; }
   gap: 8px;
   align-items: flex-start;
 }
-
 .chip {
   border: 1px solid var(--border);
   background: rgba(0,0,0,0.18);
@@ -218,10 +216,7 @@ a.btn, a.btn:hover, a.btn:focus, a.btn:active { text-decoration: none; }
 .chip:hover { border-color: rgba(255,255,255,0.20); }
 
 /* Chats list */
-.chat-list {
-  display: grid;
-  gap: 8px;
-}
+.chat-list { display: grid; gap: 8px; }
 .chat-item {
   display: grid;
   gap: 6px;
