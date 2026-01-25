@@ -1,4 +1,5 @@
-// app.js
+// app.js — FINAL (OCR+Translate via Worker, safe JPG/PNG conversion, E301 retry, RLS-safe create chat)
+
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
@@ -65,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
   }
 
+  // Guardrails
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
     setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
@@ -107,10 +109,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  // ✅ Make ANY image safe for OCR.space (jpg/png/heic) -> JPEG
-  async function toSafeJpegFile(originalFile, maxSide = 1600, quality = 0.85) {
+  // ✅ Convert ANY image to safe JPEG, fallback PNG (works for jpg/png; HEIC/webp might fail on some browsers)
+  async function toSafeImageFile(originalFile, maxSide = 1600, jpegQuality = 0.85) {
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
+
     try {
       await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -132,12 +135,25 @@ document.addEventListener("DOMContentLoaded", () => {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, nw, nh);
 
-      const blob = await new Promise((resolve) => {
-        canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
+      // Try JPEG
+      const jpegBlob = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", jpegQuality);
       });
 
-      if (!blob) return originalFile;
-      return new File([blob], "ocr.jpg", { type: "image/jpeg" });
+      if (jpegBlob) {
+        return new File([jpegBlob], "ocr.jpg", { type: "image/jpeg" });
+      }
+
+      // Fallback PNG
+      const pngBlob = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/png");
+      });
+
+      if (pngBlob) {
+        return new File([pngBlob], "ocr.png", { type: "image/png" });
+      }
+
+      return originalFile;
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -168,6 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setSignedOutUI() {
     sessionUser = null;
+
     userLine.textContent = "Sign in qiling.";
     accountLabel.classList.add("hidden");
     accountLabel.textContent = "";
@@ -197,6 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setSignedInUI(user) {
     sessionUser = user;
+
     userLine.textContent = "Kirgansiz.";
     accountLabel.textContent = user.email || "signed-in";
     accountLabel.classList.remove("hidden");
@@ -232,13 +250,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function runServerOcr(file) {
     if (!sessionUser) return setOcrStatus("Avval Sign in qiling.");
+    if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
 
     ocrUxShow();
     setOcrStatus("Preparing image (JPG/PNG safe)...");
     ocrUxSetProgress(10, "Preparing...");
 
     try {
-      const fixedFile = await toSafeJpegFile(file);
+      // Convert to safe image
+      const fixedFile = await toSafeImageFile(file);
 
       setOcrStatus("Uploading image (not stored)...");
       ocrUxSetProgress(25, "Uploading...");
@@ -246,14 +266,36 @@ document.addEventListener("DOMContentLoaded", () => {
       const fd = new FormData();
       fd.append("image", fixedFile, fixedFile.name);
 
-      ocrUxSetProgress(55, "OCR+Translate server...");
-      const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
-      const json = await res.json().catch(() => ({}));
+      // Retry for E301 (OCR.space sometimes flaky)
+      let json = {};
+      let lastErr = "";
 
-      if (!res.ok) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        ocrUxSetProgress(55, `OCR server... (try ${attempt}/2)`);
+        const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
+        json = await res.json().catch(() => ({}));
+
+        if (res.ok) {
+          lastErr = "";
+          break;
+        }
+
         const msg = json?.error ? String(json.error) : `HTTP ${res.status}`;
         const prov = json?.providerMessage ? ` (${json.providerMessage})` : "";
-        setOcrStatus(`Server error: ${msg}${prov}`);
+        lastErr = `${msg}${prov}`;
+
+        if (msg.includes("OCR provider error") && prov.includes("E301") && attempt === 1) {
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
+        }
+        break;
+      }
+
+      if (lastErr) {
+        setOcrStatus(`Server error: ${lastErr}`);
+        if (lastErr.includes("E301")) {
+          setOcrStatus("E301: OCR.space rasmni qabul qilmadi. Screenshot qilib yoki JPG/PNG qilib qayta yuboring.");
+        }
         ocrUxSetProgress(0, "Failed");
         return;
       }
