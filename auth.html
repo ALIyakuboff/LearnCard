@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vocab Cards — Auth</title>
+    <title>LearnCard — Auth</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
 
   <body>
     <header class="container header">
       <div class="brand">
-        <div class="logo">VC</div>
+        <div class="logo">LC</div>
         <div class="brand-text">
-          <h1>Vocab Cards</h1>
-          <p class="muted" id="authTopLine">Kirish / Ro‘yxatdan o‘tish</p>
+          <h1>LearnCard</h1>
+          <p class="muted">Kirish / Ro‘yxatdan o‘tish</p>
         </div>
       </div>
 
@@ -23,60 +23,40 @@
     </header>
 
     <main class="container auth-wrap">
-      <section id="alreadyPanel" class="panel hidden">
-        <h2>Allaqachon kirilgansiz</h2>
-        <p class="muted small" id="alreadyText">—</p>
-
-        <div class="row" style="margin-top:10px;">
-          <button id="continueBtn" class="btn btn-primary" type="button">Continue</button>
-          <button id="logoutBtn" class="btn btn-ghost" type="button">Sign out</button>
-        </div>
-      </section>
-
-      <div id="tabsBlock" class="auth-tabs">
-        <button id="tabSignUp" class="btn auth-tab active" type="button">Sign up</button>
+      <div class="auth-tabs">
+        <button id="tabSignUp" class="btn auth-tab" type="button">Sign up</button>
         <button id="tabSignIn" class="btn auth-tab" type="button">Sign in</button>
       </div>
 
-      <section id="formsPanel" class="panel">
+      <section class="panel">
         <form id="signUpForm" class="form">
           <h2 style="margin-bottom: 6px;">Sign up</h2>
-
-          <label class="label">
-            Email
-            <input id="signUpEmail" class="input" type="email" placeholder="you@example.com" required />
+          <label class="label">Email
+            <input id="signUpEmail" class="input" type="email" required />
           </label>
-
-          <label class="label">
-            Password
-            <input id="signUpPassword" class="input" type="password" placeholder="••••••••" required />
+          <label class="label">Password
+            <input id="signUpPassword" class="input" type="password" required />
           </label>
-
           <button class="btn btn-primary" type="submit">Create account</button>
-          <p id="signUpStatus" class="status muted" aria-live="polite"></p>
+          <p id="signUpStatus" class="status muted"></p>
         </form>
 
         <form id="signInForm" class="form hidden">
           <h2 style="margin-bottom: 6px;">Sign in</h2>
-
-          <label class="label">
-            Email
-            <input id="signInEmail" class="input" type="email" placeholder="you@example.com" required />
+          <label class="label">Email
+            <input id="signInEmail" class="input" type="email" required />
           </label>
-
-          <label class="label">
-            Password
-            <input id="signInPassword" class="input" type="password" placeholder="••••••••" required />
+          <label class="label">Password
+            <input id="signInPassword" class="input" type="password" required />
           </label>
-
           <button class="btn btn-primary" type="submit">Sign in</button>
-          <p id="signInStatus" class="status muted" aria-live="polite"></p>
+          <p id="signInStatus" class="status muted"></p>
         </form>
       </section>
     </main>
 
     <footer class="container footer muted">
-      <p>Login bo‘lgach, index.html’ga qaytasiz.</p>
+      <p>Sign in bo‘lgach, index.html’ga qaytasiz.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

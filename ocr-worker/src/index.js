@@ -13,7 +13,6 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    // Single endpoint: POST multipart/form-data with "image"
     if (request.method !== "POST") {
       return json({ error: "Method not allowed" }, 405, cors);
     }
@@ -25,9 +24,7 @@ export default {
 
     const form = await request.formData();
     const file = form.get("image");
-    if (!file) {
-      return json({ error: "No image provided. Use field name image." }, 400, cors);
-    }
+    if (!file) return json({ error: "No image provided. Use field name image." }, 400, cors);
 
     const maxBytes = 8 * 1024 * 1024;
     if (typeof file.size === "number" && file.size > maxBytes) {
@@ -38,60 +35,45 @@ export default {
       return json({ error: "OCR API key missing on server" }, 500, cors);
     }
 
-    // 1) OCR
     const ocrForm = new FormData();
     ocrForm.append("apikey", env.OCR_SPACE_API_KEY);
     ocrForm.append("language", "eng");
     ocrForm.append("isOverlayRequired", "false");
     ocrForm.append("OCREngine", "2");
     ocrForm.append("scale", "true");
+    ocrForm.append("detectOrientation", "true");
     ocrForm.append("file", file, file.name || "image.png");
 
     let ocrJson;
     try {
-      const res = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        body: ocrForm,
-      });
+      const res = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: ocrForm });
       ocrJson = await res.json();
     } catch (e) {
       return json({ error: "OCR request failed", details: String(e?.message || e) }, 502, cors);
     }
 
     if (ocrJson?.IsErroredOnProcessing) {
-      return json(
-        { error: "OCR provider error", providerMessage: ocrJson?.ErrorMessage || null },
-        502,
-        cors
-      );
+      return json({ error: "OCR provider error", providerMessage: ocrJson?.ErrorMessage || null }, 502, cors);
     }
 
-    const text = (ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
-    if (!text) {
-      // No text found -> return empty arrays (frontend can handle)
-      return json({ words: [], pairs: [] }, 200, cors);
-    }
+    const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
+    const words = text ? extractWords(text).slice(0, 100) : [];
 
-    // 2) Extract words
-    const words = extractWords(text).slice(0, 100); // up to 100
-
-    // 3) Translate words EN->UZ (best effort)
     const pairs = [];
     for (let i = 0; i < words.length; i++) {
       const en = words[i];
       const uz = await myMemoryTranslate(en);
       pairs.push({ en, uz });
-      await sleep(60); // reduce throttling risk
+      await sleep(60);
     }
 
-    return json({ words, pairs }, 200, cors);
+    return json({ text, words, pairs }, 200, cors);
   },
 };
 
 function extractWords(text) {
   const raw = String(text || "").toLowerCase();
   const parts = raw.split(/[\s\n\r\t]+/g);
-
   const seen = new Set();
   const out = [];
 
@@ -107,10 +89,7 @@ function extractWords(text) {
 }
 
 function normalizeWord(w) {
-  return String(w || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z']/g, "");
+  return String(w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
 }
 
 async function myMemoryTranslate(word) {
@@ -127,9 +106,7 @@ async function myMemoryTranslate(word) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function json(payload, status, cors) {
   return new Response(JSON.stringify(payload), {

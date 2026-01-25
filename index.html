@@ -3,15 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vocab Cards</title>
+    <title>LearnCard</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
+
   <body>
     <header class="container header">
       <div class="brand">
-        <div class="logo">VC</div>
+        <div class="logo">LC</div>
         <div class="brand-text">
-          <h1>Vocab Cards</h1>
+          <h1>LearnCard</h1>
           <p class="muted" id="userLine">Sign in qiling.</p>
         </div>
       </div>
@@ -21,7 +22,7 @@
           <div id="accountLabel" class="account-label hidden"></div>
           <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
           <a id="signUpBtn" class="btn btn-ghost" href="./auth.html#signup">Sign up</a>
-          <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
+          <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Log out</button>
         </div>
       </div>
     </header>
@@ -30,12 +31,12 @@
       <section class="panel">
         <h2>Rasm yuklash (OCR)</h2>
         <div class="muted small">
-          Rasm serverga saqlanmaydi. OCR va tarjima serverda bajariladi (tezroq va barqaror).
+          JPG/PNG ishlaydi. Rasm saqlanmaydi. OCR+tarjima Worker’da bajariladi.
         </div>
 
         <div class="form" style="margin-top:10px;">
           <label class="label">
-            Reading kitobdan rasm (jpg/png)
+            Rasm (jpg/png)
             <input id="imageInput" class="input" type="file" accept="image/*" />
           </label>
 
@@ -57,7 +58,7 @@
           <div class="divider"></div>
 
           <h2>Ajratilgan so‘zlar</h2>
-          <div class="muted small">So‘zni bosib olib tashlang. Keyin Translate & Create Chat.</div>
+          <div class="muted small">So‘zni bossangiz o‘chadi. Keyin “Translate & Create Chat”.</div>
           <div id="wordsChips" class="chips muted">Hozircha so‘z yo‘q.</div>
 
           <div class="row">
@@ -91,7 +92,7 @@
           <div class="pill" id="activeChatMeta">—</div>
         </div>
 
-        <div class="muted small">Card ustiga bosing: flip bo‘ladi.</div>
+        <div class="muted small">Card ustiga bosing: flip.</div>
 
         <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
           <div class="card-face" id="cardFront">
@@ -113,7 +114,7 @@
 
         <div class="divider"></div>
 
-        <h2>Chat import/export</h2>
+        <h2>Export / Import</h2>
         <div class="list-actions row">
           <button id="exportBtn" class="btn btn-ghost" type="button">Export JSON</button>
           <button id="importBtn" class="btn btn-ghost" type="button">Import JSON</button>
@@ -125,7 +126,7 @@
     </main>
 
     <footer class="container footer muted">
-      <p>OCR + Translate server-side. Har user: max 2 chat. Har chat: EN→UZ cards.</p>
+      <p>OCR+Translate server-side. Har user: max 2 chat.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
