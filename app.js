@@ -2,6 +2,7 @@
 // To'liq ishlaydigan versiya: chat o'chirish, import, export
 
 document.addEventListener("DOMContentLoaded", () => {
+  // ✅ Config olib kelish
   const cfg = window.APP_CONFIG || {};
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
@@ -10,6 +11,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
   const safeTrim = (s) => (s || "").trim();
+
+  // ✅ Config validation
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error("❌ Config missing!", { SUPABASE_URL, SUPABASE_ANON_KEY });
+    alert("⚠️ Config xato! config.js faylini tekshiring.");
+    return;
+  }
+
+  if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
+    console.error("❌ Config invalid!", { SUPABASE_URL, SUPABASE_ANON_KEY });
+    alert("⚠️ Supabase config noto'g'ri! config.js tekshiring.");
+    return;
+  }
+
+  console.log("✅ Config loaded:", { 
+    SUPABASE_URL, 
+    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY.substring(0, 20) + "...",
+    OCR_WORKER_URL 
+  });
 
   // UI elements
   const userLine = el("userLine");
@@ -253,11 +273,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshSession() {
-    const { data } = await supabase.auth.getSession();
-    const user = data?.session?.user || null;
-    
-    if (!user) return setSignedOutUI();
-    setSignedInUI(user);
+    try {
+      console.log("Checking session...");
+      const { data } = await supabase.auth.getSession();
+      const user = data?.session?.user || null;
+      
+      if (!user) {
+        console.log("❌ No user session");
+        return setSignedOutUI();
+      }
+      
+      console.log("✅ User session found:", user.email);
+      setSignedInUI(user);
+    } catch (error) {
+      console.error("Session check error:", error);
+      setSignedOutUI();
+    }
   }
 
   async function getChatCountRlsSafe() {
@@ -791,19 +822,37 @@ Free key: https://ocr.space/ocrapi`);
 
   // Initialization
   (async () => {
+    console.log("🚀 Initializing LearnCard...");
+    
     extractedWords = [];
     translationMap = new Map();
     renderWords();
     setActiveChat(null);
 
     await refreshSession();
-    if (sessionUser) await loadChats();
+    
+    if (sessionUser) {
+      console.log("Loading chats for user:", sessionUser.email);
+      await loadChats();
+    } else {
+      console.log("No user, skipping chat load");
+    }
+    
+    console.log("✅ LearnCard initialized");
   })();
 
   // Auth state changes
-  supabase.auth.onAuthStateChange(async (_event, session) => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log("Auth state changed:", event);
+    
     const user = session?.user || null;
-    if (!user) return setSignedOutUI();
+    
+    if (!user) {
+      console.log("User signed out");
+      return setSignedOutUI();
+    }
+    
+    console.log("User signed in:", user.email);
     setSignedInUI(user);
     await loadChats();
   });

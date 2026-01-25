@@ -2,16 +2,26 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
-  
+  const SUPABASE_URL = cfg.SUPABASE_URL || "";
+  const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+
   // Config tekshirish
-  if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     alert("⚠️ Config xato! config.js faylini tekshiring.");
+    console.error("Missing config:", { SUPABASE_URL, SUPABASE_ANON_KEY });
     return;
   }
 
+  if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
+    alert("⚠️ Supabase config noto'g'ri! config.js ni tekshiring.");
+    console.error("Invalid config:", { SUPABASE_URL, SUPABASE_ANON_KEY });
+    return;
+  }
+
+  // Supabase client yaratish
   const supabase = window.supabase.createClient(
-    cfg.SUPABASE_URL, 
-    cfg.SUPABASE_ANON_KEY, 
+    SUPABASE_URL, 
+    SUPABASE_ANON_KEY, 
     {
       auth: { 
         persistSession: true, 
@@ -50,11 +60,13 @@ document.addEventListener("DOMContentLoaded", () => {
   tabSignUp.addEventListener("click", () => {
     setMode("up");
     window.location.hash = "#signup";
+    signUpStatus.textContent = "";
   });
 
   tabSignIn.addEventListener("click", () => {
     setMode("in");
     window.location.hash = "";
+    signInStatus.textContent = "";
   });
 
   // Sign Up
@@ -76,26 +88,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     signUpStatus.textContent = "🔄 Creating account...";
     
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    if (error) {
-      signUpStatus.textContent = `❌ ${error.message}`;
-      return;
-    }
+      if (error) {
+        console.error("Sign up error:", error);
+        signUpStatus.textContent = `❌ ${error.message}`;
+        return;
+      }
 
-    // Supabase v2: auto-confirm email (agar sozlamada yoqilgan bo'lsa)
-    if (data?.user && data?.session) {
-      signUpStatus.textContent = "✅ Account created! Redirecting...";
-      setTimeout(() => {
-        window.location.href = "./index.html";
-      }, 1000);
-    } else {
-      signUpStatus.textContent = "✅ Account created! Now sign in.";
-      setMode("in");
-      signInEmail.value = email;
+      console.log("Sign up success:", data);
+
+      // Supabase v2: auto-confirm email (agar sozlamada yoqilgan bo'lsa)
+      if (data?.user && data?.session) {
+        signUpStatus.textContent = "✅ Account created! Redirecting...";
+        setTimeout(() => {
+          window.location.href = "./index.html";
+        }, 1000);
+      } else {
+        // Email confirmation kerak bo'lgan holat
+        signUpStatus.textContent = "✅ Account created! Check your email to confirm, then sign in.";
+        setTimeout(() => {
+          setMode("in");
+          signInEmail.value = email;
+        }, 2000);
+      }
+    } catch (err) {
+      console.error("Sign up exception:", err);
+      signUpStatus.textContent = `❌ Xato: ${err.message || err}`;
     }
   });
 
@@ -113,29 +136,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
     signInStatus.textContent = "🔄 Signing in...";
     
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      signInStatus.textContent = `❌ ${error.message}`;
-      return;
-    }
+      if (error) {
+        console.error("Sign in error:", error);
+        signInStatus.textContent = `❌ ${error.message}`;
+        return;
+      }
 
-    if (data?.user) {
-      signInStatus.textContent = "✅ Success! Redirecting...";
-      setTimeout(() => {
-        window.location.href = "./index.html";
-      }, 500);
+      console.log("Sign in success:", data);
+
+      if (data?.user) {
+        signInStatus.textContent = "✅ Success! Redirecting...";
+        setTimeout(() => {
+          window.location.href = "./index.html";
+        }, 500);
+      }
+    } catch (err) {
+      console.error("Sign in exception:", err);
+      signInStatus.textContent = `❌ Xato: ${err.message || err}`;
     }
   });
 
   // Agar allaqachon sign in bo'lgan bo'lsa
   (async () => {
-    const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) {
-      window.location.href = "./index.html";
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.user) {
+        console.log("Already signed in, redirecting...");
+        window.location.href = "./index.html";
+      }
+    } catch (err) {
+      console.error("Session check error:", err);
     }
   })();
 });
