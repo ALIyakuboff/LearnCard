@@ -8,14 +8,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
   const safeTrim = (s) => (s || "").trim();
 
-  // Header/Auth
   const userLine = el("userLine");
   const accountLabel = el("accountLabel");
   const signInBtn = el("signInBtn");
   const signUpBtn = el("signUpBtn");
   const signOutBtn = el("signOutBtn");
 
-  // OCR UI
   const imageInput = el("imageInput");
   const runOcrBtn = el("runOcrBtn");
   const clearScanBtn = el("clearScanBtn");
@@ -29,13 +27,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const manualWord = el("manualWord");
   const addManualWordBtn = el("addManualWordBtn");
 
-  // Create chat
   const chatTitle = el("chatTitle");
   const createChatBtn = el("createChatBtn");
   const createStatus = el("createStatus");
   const chatList = el("chatList");
 
-  // Flashcards
   const activeChatTitle = el("activeChatTitle");
   const activeChatMeta = el("activeChatMeta");
   const card = el("card");
@@ -47,7 +43,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const prevBtn = el("prevBtn");
   const nextBtn = el("nextBtn");
 
-  // Import/Export
   const exportBtn = el("exportBtn");
   const importBtn = el("importBtn");
   const importFile = el("importFile");
@@ -62,17 +57,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ocrProgressBar) ocrProgressBar.style.width = "0%";
     if (ocrProgressText) ocrProgressText.textContent = "Starting...";
   }
-  function ocrUxHide() {
-    if (!ocrUx) return;
-    ocrUx.classList.add("hidden");
-  }
+  function ocrUxHide() { if (ocrUx) ocrUx.classList.add("hidden"); }
   function ocrUxSetProgress(pct, text) {
     const p = Math.max(0, Math.min(100, pct));
     if (ocrProgressBar) ocrProgressBar.style.width = `${p}%`;
     if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
   }
 
-  // Guardrails
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
     setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
@@ -85,14 +76,9 @@ document.addEventListener("DOMContentLoaded", () => {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   });
 
-  // State
   let sessionUser = null;
-
-  // words: string[]
   let extractedWords = [];
-  // translations map: en -> uz
-  let translationMap = new Map();
-
+  let translationMap = new Map(); // en -> uz
   let chats = [];
   let activeChat = null;
   let activeCards = [];
@@ -102,10 +88,47 @@ document.addEventListener("DOMContentLoaded", () => {
     return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
   }
 
-  // AUTH UI
+  function extractWordsFromText(text) {
+    const raw = (text || "").toLowerCase();
+    const parts = raw.split(/[\s\n\r\t]+/g);
+    const seen = new Set();
+    const out = [];
+    for (const p of parts) {
+      const w = normalizeWord(p);
+      if (!w) continue;
+      if (w.length < 3) continue;
+      if (seen.has(w)) continue;
+      seen.add(w);
+      out.push(w);
+    }
+    return out;
+  }
+
+  function renderWords() {
+    if (!wordsChips) return;
+    if (!extractedWords.length) {
+      wordsChips.textContent = "Hozircha so‘z yo‘q.";
+      wordsChips.classList.add("muted");
+      return;
+    }
+    wordsChips.classList.remove("muted");
+    wordsChips.innerHTML = "";
+    extractedWords.forEach((w) => {
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      chip.textContent = w;
+      chip.title = "Bosib olib tashlang";
+      chip.addEventListener("click", () => {
+        extractedWords = extractedWords.filter((x) => x !== w);
+        translationMap.delete(w);
+        renderWords();
+      });
+      wordsChips.appendChild(chip);
+    });
+  }
+
   function setSignedOutUI() {
     sessionUser = null;
-
     userLine.textContent = "Sign in qiling.";
     accountLabel.classList.add("hidden");
     accountLabel.textContent = "";
@@ -129,17 +152,14 @@ document.addEventListener("DOMContentLoaded", () => {
     extractedWords = [];
     translationMap = new Map();
     renderWords();
-
     setOcrStatus("");
     setCreateStatus("");
   }
 
   function setSignedInUI(user) {
     sessionUser = user;
-
-    const email = user?.email || "signed-in";
     userLine.textContent = "Kirgansiz.";
-    accountLabel.textContent = email;
+    accountLabel.textContent = user.email || "signed-in";
     accountLabel.classList.remove("hidden");
 
     signInBtn.classList.add("hidden");
@@ -163,57 +183,30 @@ document.addEventListener("DOMContentLoaded", () => {
     setSignedInUI(user);
   }
 
-  // WORDS UI (click to delete)
-  function renderWords() {
-    if (!wordsChips) return;
-
-    if (!extractedWords.length) {
-      wordsChips.textContent = "Hozircha so‘z yo‘q.";
-      wordsChips.classList.add("muted");
-      return;
-    }
-
-    wordsChips.classList.remove("muted");
-    wordsChips.innerHTML = "";
-
-    extractedWords.forEach((w) => {
-      const chip = document.createElement("div");
-      chip.className = "chip";
-      chip.textContent = w;
-      chip.title = "Bosib olib tashlang";
-      chip.addEventListener("click", () => {
-        // remove word + its translation
-        extractedWords = extractedWords.filter((x) => x !== w);
-        translationMap.delete(w);
-        renderWords();
-      });
-      wordsChips.appendChild(chip);
-    });
+  // ✅ RLS-safe chat count
+  async function getChatCountRlsSafe() {
+    const { count, error } = await supabase
+      .from("vocab_chats")
+      .select("*", { count: "exact", head: true });
+    if (error) throw error;
+    return count || 0;
   }
 
-  // OCR+Translate single call
-  async function runOcrAndTranslate(file) {
-    if (!OCR_WORKER_URL.startsWith("https://")) {
-      setOcrStatus("OCR worker URL yo‘q. config.js ni tekshiring.");
-      return;
-    }
-    if (!sessionUser) {
-      setOcrStatus("Avval Sign in qiling.");
-      return;
-    }
+  async function runServerOcr(file) {
+    if (!sessionUser) return setOcrStatus("Avval Sign in qiling.");
 
     ocrUxShow();
     setOcrStatus("Uploading image (not stored)...");
-    ocrUxSetProgress(20, "Uploading...");
+    ocrUxSetProgress(15, "Uploading...");
 
     try {
       const fd = new FormData();
       fd.append("image", file);
 
-      ocrUxSetProgress(50, "OCR + Translate on server...");
+      ocrUxSetProgress(45, "OCR + Translate on server...");
       const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
-
       const json = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         const msg = json?.error ? String(json.error) : `HTTP ${res.status}`;
         const prov = json?.providerMessage ? ` (${json.providerMessage})` : "";
@@ -222,39 +215,149 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const words = Array.isArray(json?.words) ? json.words : [];
-      const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
+      // ✅ NEW: prefer json.words. fallback to json.text
+      const text = (json?.text || "").trim();
+      let words = Array.isArray(json?.words) ? json.words : [];
 
-      extractedWords = words.slice(0, 100);
+      if (words.length === 0 && text) {
+        words = extractWordsFromText(text);
+      }
+
+      extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 100);
+
+      // ✅ NEW: build translationMap from json.pairs
       translationMap = new Map();
-
+      const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
       for (const p of pairs) {
         const en = normalizeWord(p?.en);
+        if (!en) continue;
         const uz = typeof p?.uz === "string" ? p.uz : "";
-        if (en) translationMap.set(en, uz);
+        translationMap.set(en, uz);
       }
 
       renderWords();
-      setOcrStatus(`Done. Words: ${extractedWords.length}`);
+      setOcrStatus(`Done. Words: ${extractedWords.length} | textChars: ${text.length}`);
       ocrUxSetProgress(100, `Done. ${extractedWords.length} words`);
     } catch (e) {
-      setOcrStatus(`Error: ${String(e?.message || e)}`);
+      setOcrStatus(`OCR error: ${String(e?.message || e)}`);
       ocrUxSetProgress(0, "Failed");
     } finally {
       setTimeout(() => ocrUxHide(), 600);
     }
   }
 
-  // RLS-safe count
-  async function getChatCount() {
-    const { count, error } = await supabase
+  async function loadChats() {
+    if (!sessionUser) return;
+    const { data, error } = await supabase
       .from("vocab_chats")
-      .select("*", { count: "exact", head: true });
-    if (error) throw error;
-    return count || 0;
+      .select("id, title, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      chatList.textContent = `Chats error: ${error.message}`;
+      chats = [];
+      return;
+    }
+
+    chats = data || [];
+    renderChatList();
+    if (chats.length > 0) await openChat(chats[0]);
+    else setActiveChat(null);
   }
 
-  // Create chat using translationMap (no translate call here)
+  function renderChatList() {
+    if (!sessionUser) return;
+    if (!chats.length) {
+      chatList.textContent = "Hozircha chat yo‘q.";
+      return;
+    }
+    chatList.innerHTML = "";
+    chats.forEach((c) => {
+      const item = document.createElement("div");
+      item.className = "chat-item";
+      item.textContent = c.title || "Untitled chat";
+      item.addEventListener("click", () => openChat(c));
+      chatList.appendChild(item);
+    });
+  }
+
+  async function openChat(chat) {
+    activeChat = chat;
+    setActiveChat(chat);
+
+    const { data, error } = await supabase
+      .from("vocab_cards")
+      .select("id, en, uz, created_at")
+      .eq("chat_id", chat.id)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      activeCards = [];
+      cardIndex = 0;
+      renderCard();
+      renderCardsList();
+      setCreateStatus(`Load cards error: ${error.message}`);
+      return;
+    }
+
+    activeCards = data || [];
+    cardIndex = 0;
+    renderCard();
+    renderCardsList();
+  }
+
+  function setActiveChat(chat) {
+    activeChat = chat;
+    if (!chat) {
+      activeChatTitle.textContent = "Flashcards";
+      activeChatMeta.textContent = "—";
+      activeCards = [];
+      cardIndex = 0;
+      renderCard();
+      renderCardsList();
+      return;
+    }
+    activeChatTitle.textContent = chat.title || "Untitled chat";
+    activeChatMeta.textContent = "Active";
+  }
+
+  function renderCardsList() {
+    if (!activeChat) {
+      cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda chiqadi.";
+      return;
+    }
+    if (!activeCards.length) {
+      cardsList.textContent = "Bu chatda card yo‘q.";
+      return;
+    }
+    cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
+  }
+
+  function showFront() { cardBack.classList.add("hidden"); cardFront.classList.remove("hidden"); }
+  function showBack() { cardFront.classList.add("hidden"); cardBack.classList.remove("hidden"); }
+
+  function renderCard() {
+    if (!activeChat) {
+      showFront();
+      frontText.textContent = "Chat tanlang yoki yarating.";
+      backText.textContent = "—";
+      exampleText.textContent = "";
+      return;
+    }
+    if (!activeCards.length) {
+      showFront();
+      frontText.textContent = "Bu chatda card yo‘q.";
+      backText.textContent = "—";
+      exampleText.textContent = "";
+      return;
+    }
+    const c = activeCards[cardIndex];
+    showFront();
+    frontText.textContent = c.en || "—";
+    backText.textContent = c.uz || "—";
+    exampleText.textContent = "";
+  }
+
   async function createChatFromWords() {
     if (!sessionUser) return setCreateStatus("Avval Sign in qiling.");
     if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval OCR qiling.");
@@ -263,7 +366,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       setCreateStatus("Chat limiti tekshirilmoqda...");
-      const cnt = await getChatCount();
+      const cnt = await getChatCountRlsSafe();
       if (cnt >= 2) {
         setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chiring.");
         return;
@@ -309,134 +412,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Chats
-  async function loadChats() {
-    if (!sessionUser) return;
-
-    const { data, error } = await supabase
-      .from("vocab_chats")
-      .select("id, title, created_at")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      chatList.textContent = `Chats error: ${error.message}`;
-      chats = [];
-      return;
-    }
-
-    chats = data || [];
-    renderChatList();
-    if (chats.length > 0) await openChat(chats[0]);
-    else setActiveChat(null);
-  }
-
-  function renderChatList() {
-    if (!sessionUser) return;
-
-    if (!chats.length) {
-      chatList.textContent = "Hozircha chat yo‘q.";
-      return;
-    }
-
-    chatList.innerHTML = "";
-    chats.forEach((c) => {
-      const item = document.createElement("div");
-      item.className = "chat-item";
-      item.textContent = c.title || "Untitled chat";
-      item.addEventListener("click", () => openChat(c));
-      chatList.appendChild(item);
-    });
-  }
-
-  async function deleteChat(chatId) {
-    if (!sessionUser) return;
-    const ok = confirm("Chat o‘chirilsinmi? (limit 2 bo‘shashi uchun)");
-    if (!ok) return;
-
-    const { error } = await supabase.from("vocab_chats").delete().eq("id", chatId);
-    if (error) return setCreateStatus(`Delete error: ${error.message}`);
-
-    if (activeChat?.id === chatId) setActiveChat(null);
-    await loadChats();
-  }
-
-  async function openChat(chat) {
-    activeChat = chat;
-    setActiveChat(chat);
-
-    const { data, error } = await supabase
-      .from("vocab_cards")
-      .select("id, en, uz, created_at")
-      .eq("chat_id", chat.id)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      activeCards = [];
-      cardIndex = 0;
-      renderCard();
-      renderCardsList();
-      setCreateStatus(`Load cards error: ${error.message}`);
-      return;
-    }
-
-    activeCards = data || [];
-    cardIndex = 0;
-    renderCard();
-    renderCardsList();
-  }
-
-  function setActiveChat(chat) {
-    activeChat = chat;
-    if (!chat) {
-      activeChatTitle.textContent = "Flashcards";
-      activeChatMeta.textContent = "—";
-      activeCards = [];
-      cardIndex = 0;
-      renderCard();
-      renderCardsList();
-      return;
-    }
-    activeChatTitle.textContent = chat.title || "Untitled chat";
-    activeChatMeta.textContent = "Active";
-  }
-
-  function renderCardsList() {
-    if (!activeChat) {
-      cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
-      return;
-    }
-    if (!activeCards.length) {
-      cardsList.textContent = "Bu chatda card yo‘q.";
-      return;
-    }
-    cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
-  }
-
-  function showFront() { cardBack.classList.add("hidden"); cardFront.classList.remove("hidden"); }
-  function showBack() { cardFront.classList.add("hidden"); cardBack.classList.remove("hidden"); }
-
-  function renderCard() {
-    if (!activeChat) {
-      showFront();
-      frontText.textContent = "Chat tanlang yoki yarating.";
-      backText.textContent = "—";
-      exampleText.textContent = "";
-      return;
-    }
-    if (!activeCards.length) {
-      showFront();
-      frontText.textContent = "Bu chatda card yo‘q.";
-      backText.textContent = "—";
-      exampleText.textContent = "";
-      return;
-    }
-    const c = activeCards[cardIndex];
-    showFront();
-    frontText.textContent = c.en || "—";
-    backText.textContent = c.uz || "—";
-    exampleText.textContent = "";
-  }
-
   // Events
   signOutBtn.addEventListener("click", async () => {
     await supabase.auth.signOut();
@@ -446,7 +421,7 @@ document.addEventListener("DOMContentLoaded", () => {
   runOcrBtn.addEventListener("click", async () => {
     const file = imageInput.files?.[0];
     if (!file) return setOcrStatus("Avval rasm tanlang.");
-    await runOcrAndTranslate(file);
+    await runServerOcr(file);
   });
 
   clearScanBtn.addEventListener("click", () => {
@@ -473,47 +448,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   createChatBtn.addEventListener("click", createChatFromWords);
 
-  // flip
   card.addEventListener("click", () => {
     if (cardBack.classList.contains("hidden")) showBack(); else showFront();
   });
+
   prevBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length;
     renderCard();
   });
+
   nextBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex + 1) % activeCards.length;
     renderCard();
-  });
-
-  // minimal export/import (optional)
-  exportBtn.addEventListener("click", () => {
-    if (!activeChat) return setCreateStatus("Export uchun chat tanlang.");
-    const payload = {
-      title: activeChat.title || "Untitled chat",
-      created_at: activeChat.created_at,
-      cards: activeCards.map((c) => ({ en: c.en, uz: c.uz || "" })),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(activeChat.title || "chat").replace(/\s+/g, "_")}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  });
-
-  importBtn.addEventListener("click", () => {
-    importFile.value = "";
-    importFile.click();
-  });
-
-  importFile.addEventListener("change", async () => {
-    setCreateStatus("Import bu versiyada ixtiyoriy (keyin qo‘shamiz).");
   });
 
   // Init
