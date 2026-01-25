@@ -1,4 +1,4 @@
-// Cloudflare Worker — OCR + Translation
+// Cloudflare Worker — OCR + Translation (E301 xatolik tuzatilgan)
 // Deploy: wrangler deploy
 
 export default {
@@ -12,12 +12,10 @@ export default {
       "Vary": "Origin",
     };
 
-    // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    // Faqat POST
     if (request.method !== "POST") {
       return json({ error: "Method not allowed" }, 405, cors);
     }
@@ -27,12 +25,10 @@ export default {
       return json({ error: "Expected multipart/form-data" }, 400, cors);
     }
 
-    // API key tekshirish
     if (!env.OCR_SPACE_API_KEY) {
       return json({ error: "OCR API key missing on server" }, 500, cors);
     }
 
-    // Form data
     const form = await request.formData();
     const file = form.get("image");
     
@@ -40,29 +36,43 @@ export default {
       return json({ error: "No image provided. Use field name 'image'." }, 400, cors);
     }
 
-    // File size tekshirish (max 8MB)
     const maxBytes = 8 * 1024 * 1024;
     if (typeof file.size === "number" && file.size > maxBytes) {
       return json({ error: "Image too large (max 8MB)" }, 413, cors);
     }
 
-    // MIME type aniqlash
+    // ✅ YAXSHILANGAN: Rasm tipini tekshirish
     let mime = (file.type || "").toLowerCase();
-    if (!mime.startsWith("image/")) mime = "image/jpeg";
     
+    // Faqat JPG va PNG qabul qilish
     if (!["image/jpeg", "image/jpg", "image/png"].includes(mime)) {
-      mime = "image/jpeg";
+      return json({ 
+        error: "Unsupported image format. Only JPG and PNG allowed.", 
+        receivedType: mime 
+      }, 400, cors);
     }
 
-    // Rasmni base64 ga o'girish
+    // ✅ YAXSHILANGAN: ArrayBuffer → Uint8Array → base64
     let base64;
     try {
-      const buf = await file.arrayBuffer();
-      base64 = arrayBufferToBase64(buf);
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Chunked conversion for large files
+      let binary = '';
+      const chunkSize = 32768; // 32KB chunks
+      
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+      
+      base64 = btoa(binary);
+      
     } catch (e) {
       return json(
         { 
-          error: "Failed to read uploaded file", 
+          error: "Failed to encode image", 
           details: String(e?.message || e) 
         }, 
         400, 
@@ -70,66 +80,111 @@ export default {
       );
     }
 
-    const base64Image = `data:${mime};base64,${base64}`;
+    // ✅ YAXSHILANGAN: OCR.space uchun to'g'ri format
+    // Base64 prefix: faqat image/jpeg yoki image/png
+    const mimeType = mime === "image/png" ? "image/png" : "image/jpeg";
+    const base64Image = `data:${mimeType};base64,${base64}`;
 
-    // OCR.space API ga yuborish
+    // ✅ YAXSHILANGAN: OCR.space API params
     const params = new URLSearchParams();
     params.set("apikey", env.OCR_SPACE_API_KEY);
     params.set("language", "eng");
     params.set("isOverlayRequired", "false");
-    params.set("OCREngine", "2");
+    params.set("OCREngine", "2"); // Engine 2 is more accurate
     params.set("scale", "true");
     params.set("detectOrientation", "true");
     params.set("base64Image", base64Image);
 
+    // ✅ YAXSHILANGAN: 2 marta retry with delay
     let ocrJson;
-    try {
-      const res = await fetch("https://api.ocr.space/parse/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: params.toString(),
-      });
-      ocrJson = await res.json();
-    } catch (e) {
-      return json(
-        { 
-          error: "OCR request failed", 
-          details: String(e?.message || e) 
-        }, 
-        502, 
-        cors
-      );
+    let lastError = null;
+    
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch("https://api.ocr.space/parse/image", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "LearnCard/1.0"
+          },
+          body: params.toString(),
+        });
+        
+        ocrJson = await res.json();
+        
+        // Agar muvaffaqiyatli bo'lsa, loop'dan chiqamiz
+        if (!ocrJson?.IsErroredOnProcessing) {
+          lastError = null;
+          break;
+        }
+        
+        // E301 xatolik - retry qilamiz
+        const errMsg = ocrJson?.ErrorMessage || "";
+        if (errMsg.includes("E301") && attempt === 1) {
+          lastError = errMsg;
+          await sleep(800); // 800ms kutamiz
+          continue;
+        }
+        
+        // Boshqa xatolik - loop'dan chiqamiz
+        lastError = errMsg;
+        break;
+        
+      } catch (e) {
+        lastError = String(e?.message || e);
+        if (attempt === 1) {
+          await sleep(800);
+          continue;
+        }
+        break;
+      }
     }
 
-    // OCR xatolik tekshirish
-    if (ocrJson?.IsErroredOnProcessing) {
+    // Xatolik tekshirish
+    if (lastError || ocrJson?.IsErroredOnProcessing) {
       return json(
         {
           error: "OCR provider error",
-          providerMessage: ocrJson?.ErrorMessage || null,
+          providerMessage: ocrJson?.ErrorMessage || lastError || "Unknown error",
           providerDetails: ocrJson?.ErrorDetails || null,
+          suggestion: "Try: 1) Take screenshot instead of photo, 2) Ensure good lighting, 3) Use PNG format"
         },
         502,
         cors
       );
     }
 
-    // Matnni ajratib olish
+    // ✅ Matnni ajratib olish
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
-    const words = text ? extractWords(text).slice(0, 100) : [];
+    
+    if (!text) {
+      return json({
+        error: "No text found in image",
+        suggestion: "Make sure image contains clear, readable text"
+      }, 400, cors);
+    }
+    
+    const words = extractWords(text).slice(0, 100);
 
-    // Tarjima qilish (MyMemory API)
+    // ✅ Tarjima qilish (parallel for speed)
     const pairs = [];
+    const translations = await Promise.all(
+      words.map(word => myMemoryTranslate(word))
+    );
+    
     for (let i = 0; i < words.length; i++) {
-      const en = words[i];
-      const uz = await myMemoryTranslate(en);
-      pairs.push({ en, uz });
-      
-      // Rate limit uchun kichik kutish
-      await sleep(60);
+      pairs.push({ 
+        en: words[i], 
+        uz: translations[i] 
+      });
     }
 
-    return json({ text, words, pairs }, 200, cors);
+    return json({ 
+      text, 
+      words, 
+      pairs,
+      ocrEngine: "OCR.space Engine 2"
+    }, 200, cors);
   },
 };
 
@@ -158,25 +213,15 @@ function normalizeWord(w) {
     .replace(/[^a-z']/g, "");
 }
 
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000; // 32KB chunks
-  
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  
-  return btoa(binary);
-}
-
 async function myMemoryTranslate(word) {
   const q = encodeURIComponent(word);
   const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
   
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { "User-Agent": "LearnCard/1.0" }
+    });
+    
     if (!res.ok) return "";
     
     const data = await res.json();

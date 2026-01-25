@@ -276,6 +276,22 @@ document.addEventListener("DOMContentLoaded", () => {
       return setOcrStatus("⚠️ Worker URL yo'q.");
     }
 
+    // ✅ Rasm formatini tekshirish
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+    if (!validTypes.includes(file.type.toLowerCase())) {
+      return setOcrStatus(`❌ Noto'g'ri format: ${file.type}. Faqat JPG/PNG qabul qilinadi.`);
+    }
+
+    // ✅ Rasm hajmini tekshirish
+    const maxSize = 8 * 1024 * 1024; // 8MB
+    if (file.size > maxSize) {
+      return setOcrStatus(`❌ Rasm juda katta: ${(file.size / 1024 / 1024).toFixed(1)}MB. Max: 8MB`);
+    }
+
+    if (file.size < 1024) {
+      return setOcrStatus(`❌ Rasm juda kichik: ${file.size} bytes. Minimum: 1KB`);
+    }
+
     ocrUxShow();
     setOcrStatus("🔄 Preparing image...");
     ocrUxSetProgress(10, "Preparing...");
@@ -320,10 +336,23 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (lastErr) {
-        setOcrStatus(`❌ Server error: ${lastErr}`);
-        
+        // ✅ E301 uchun batafsil xabar
         if (lastErr.includes("E301")) {
-          setOcrStatus("❌ E301: OCR.space rasmni qabul qilmadi. Screenshot yoki boshqa rasm yuboring.");
+          setOcrStatus(`❌ E301: Rasm qabul qilinmadi. 
+Yechim: 
+1) Screenshot oling (Win+Shift+S yoki Cmd+Shift+4)
+2) PNG formatda saqlang
+3) Qayta yuklang`);
+        } 
+        // ✅ E500 (API limit)
+        else if (lastErr.includes("E500") || lastErr.includes("limit")) {
+          setOcrStatus(`❌ API limit tugagan! 
+Yechim: config.js da yangi OCR_SPACE_API_KEY kiriting.
+Free key: https://ocr.space/ocrapi`);
+        }
+        // ✅ Boshqa xatoliklar
+        else {
+          setOcrStatus(`❌ Server error: ${lastErr}`);
         }
         
         ocrUxSetProgress(0, "Failed");
