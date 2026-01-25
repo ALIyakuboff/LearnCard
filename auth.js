@@ -1,10 +1,28 @@
+// auth.js — LearnCard autentifikatsiya sahifasi logikasi
+
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
-  const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  });
+  
+  // Config tekshirish
+  if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
+    alert("⚠️ Config xato! config.js faylini tekshiring.");
+    return;
+  }
+
+  const supabase = window.supabase.createClient(
+    cfg.SUPABASE_URL, 
+    cfg.SUPABASE_ANON_KEY, 
+    {
+      auth: { 
+        persistSession: true, 
+        autoRefreshToken: true, 
+        detectSessionInUrl: true 
+      },
+    }
+  );
 
   const el = (id) => document.getElementById(id);
+  
   const tabSignUp = el("tabSignUp");
   const tabSignIn = el("tabSignIn");
   const signUpForm = el("signUpForm");
@@ -25,32 +43,99 @@ document.addEventListener("DOMContentLoaded", () => {
     signInForm.classList.toggle("hidden", mode !== "in");
   }
 
-  setMode((window.location.hash || "").includes("signup") ? "up" : "in");
+  // URL hash orqali mode aniqlash
+  const initialMode = (window.location.hash || "").includes("signup") ? "up" : "in";
+  setMode(initialMode);
 
-  tabSignUp.addEventListener("click", () => setMode("up"));
-  tabSignIn.addEventListener("click", () => setMode("in"));
+  tabSignUp.addEventListener("click", () => {
+    setMode("up");
+    window.location.hash = "#signup";
+  });
 
+  tabSignIn.addEventListener("click", () => {
+    setMode("in");
+    window.location.hash = "";
+  });
+
+  // Sign Up
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    signUpStatus.textContent = "Creating...";
-    const { error } = await supabase.auth.signUp({
-      email: signUpEmail.value.trim(),
-      password: signUpPassword.value.trim(),
+    
+    const email = signUpEmail.value.trim();
+    const password = signUpPassword.value.trim();
+
+    if (!email || !password) {
+      signUpStatus.textContent = "⚠️ Email va parol kiriting.";
+      return;
+    }
+
+    if (password.length < 6) {
+      signUpStatus.textContent = "⚠️ Parol kamida 6 ta belgi bo'lishi kerak.";
+      return;
+    }
+
+    signUpStatus.textContent = "🔄 Creating account...";
+    
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
     });
-    if (error) return (signUpStatus.textContent = error.message);
-    signUpStatus.textContent = "Account created. Now sign in.";
-    setMode("in");
-    signInEmail.value = signUpEmail.value.trim();
+
+    if (error) {
+      signUpStatus.textContent = `❌ ${error.message}`;
+      return;
+    }
+
+    // Supabase v2: auto-confirm email (agar sozlamada yoqilgan bo'lsa)
+    if (data?.user && data?.session) {
+      signUpStatus.textContent = "✅ Account created! Redirecting...";
+      setTimeout(() => {
+        window.location.href = "./index.html";
+      }, 1000);
+    } else {
+      signUpStatus.textContent = "✅ Account created! Now sign in.";
+      setMode("in");
+      signInEmail.value = email;
+    }
   });
 
+  // Sign In
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    signInStatus.textContent = "Signing in...";
-    const { error } = await supabase.auth.signInWithPassword({
-      email: signInEmail.value.trim(),
-      password: signInPassword.value.trim(),
+    
+    const email = signInEmail.value.trim();
+    const password = signInPassword.value.trim();
+
+    if (!email || !password) {
+      signInStatus.textContent = "⚠️ Email va parol kiriting.";
+      return;
+    }
+
+    signInStatus.textContent = "🔄 Signing in...";
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
-    if (error) return (signInStatus.textContent = error.message);
-    window.location.href = "./index.html";
+
+    if (error) {
+      signInStatus.textContent = `❌ ${error.message}`;
+      return;
+    }
+
+    if (data?.user) {
+      signInStatus.textContent = "✅ Success! Redirecting...";
+      setTimeout(() => {
+        window.location.href = "./index.html";
+      }, 500);
+    }
   });
+
+  // Agar allaqachon sign in bo'lgan bo'lsa
+  (async () => {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) {
+      window.location.href = "./index.html";
+    }
+  })();
 });
