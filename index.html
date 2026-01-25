@@ -19,7 +19,6 @@
       <div class="header-actions">
         <div class="account-box">
           <div id="accountLabel" class="account-label hidden"></div>
-
           <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
           <a id="signUpBtn" class="btn btn-ghost" href="./auth.html#signup">Sign up</a>
           <button id="signOutBtn" class="btn btn-ghost hidden" type="button">Sign out</button>
@@ -28,34 +27,17 @@
     </header>
 
     <main class="container layout">
-      <!-- LEFT -->
       <section class="panel">
         <h2>Rasm yuklash (OCR)</h2>
         <div class="muted small">
-          Rasm serverga saqlanmaydi. OCR brauzerda ishlaydi; tarjima uchun so‘zlar EN→UZ servisiga yuboriladi.
+          Rasm serverga saqlanmaydi. OCR va tarjima serverda bajariladi (tezroq va barqaror).
         </div>
 
-        <div class="form" style="margin-top: 10px;">
+        <div class="form" style="margin-top:10px;">
           <label class="label">
             Reading kitobdan rasm (jpg/png)
             <input id="imageInput" class="input" type="file" accept="image/*" />
           </label>
-
-          <!-- OCR mode toggle -->
-          <div class="ocr-mode">
-            <div class="muted small">OCR Mode</div>
-            <div class="segmented" role="tablist" aria-label="OCR mode">
-              <button id="modeFastBtn" class="seg-btn active" type="button" role="tab" aria-selected="true">
-                Fast
-              </button>
-              <button id="modeAccurateBtn" class="seg-btn" type="button" role="tab" aria-selected="false">
-                Accurate
-              </button>
-            </div>
-            <div id="modeHint" class="muted small mode-hint">
-              Fast: tezroq. Accurate: aniqroq (sekinroq).
-            </div>
-          </div>
 
           <div class="row">
             <button id="runOcrBtn" class="btn btn-primary" type="button">Scan (OCR)</button>
@@ -64,7 +46,6 @@
 
           <div id="ocrStatus" class="status muted"></div>
 
-          <!-- OCR UX -->
           <div id="ocrUx" class="ocr-ux hidden" aria-live="polite">
             <div class="spinner"></div>
             <div class="progress">
@@ -76,14 +57,11 @@
           <div class="divider"></div>
 
           <h2>Ajratilgan so‘zlar</h2>
-          <div class="muted small">
-            Keraksiz so‘zni bosib olib tashlang. So‘ng “Translate & Create Chat” bosing.
-          </div>
-
+          <div class="muted small">So‘zni bosib olib tashlang. Keyin Translate & Create Chat.</div>
           <div id="wordsChips" class="chips muted">Hozircha so‘z yo‘q.</div>
 
           <div class="row">
-            <label class="label" style="flex: 1;">
+            <label class="label" style="flex:1;">
               So‘z qo‘shish (manual)
               <input id="manualWord" class="input" type="text" placeholder="e.g., allocate" />
             </label>
@@ -97,21 +75,16 @@
             <input id="chatTitle" class="input" type="text" placeholder="e.g., Reading Unit 3" />
           </label>
 
-          <button id="createChatBtn" class="btn btn-primary" type="button">
-            Translate & Create Chat
-          </button>
+          <button id="createChatBtn" class="btn btn-primary" type="button">Translate & Create Chat</button>
           <div id="createStatus" class="status muted"></div>
 
           <div class="divider"></div>
 
           <h2>Chatlar (max 2)</h2>
-          <div id="chatList" class="chat-list muted">
-            Sign in qiling — chatlar shu yerda chiqadi.
-          </div>
+          <div id="chatList" class="chat-list muted">Sign in qiling — chatlar shu yerda chiqadi.</div>
         </div>
       </section>
 
-      <!-- RIGHT -->
       <section class="panel">
         <div class="card-header">
           <h2 id="activeChatTitle">Flashcards</h2>
@@ -123,7 +96,7 @@
         <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
           <div class="card-face" id="cardFront">
             <div class="card-label muted">EN</div>
-            <div class="card-text" id="frontText">Chat tanlang yoki yaratib oling.</div>
+            <div class="card-text" id="frontText">Chat tanlang yoki yarating.</div>
           </div>
 
           <div class="card-face card-back hidden" id="cardBack">
@@ -147,18 +120,15 @@
           <input id="importFile" type="file" accept="application/json" class="hidden" />
         </div>
 
-        <div id="cardsList" class="list muted">
-          Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.
-        </div>
+        <div id="cardsList" class="list muted">Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.</div>
       </section>
     </main>
 
     <footer class="container footer muted">
-      <p>Mobile-first. Har user: max 2 chat. Har chat: OCR → EN→UZ cards.</p>
+      <p>OCR + Translate server-side. Har user: max 2 chat. Har chat: EN→UZ cards.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
