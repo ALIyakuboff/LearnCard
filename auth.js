@@ -89,16 +89,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    signUpStatus.textContent = "✅ Account created. Sahifaga o'tilmoqda...";
-    window.location.href = "./index.html";
+    // Simplified auto-redirect with fallback link
+    signUpStatus.innerHTML = `✅ Account created. <a href="./index.html" style="color:#fff;text-decoration:underline;">Bosh sahifaga o'tish</a>`;
+    setTimeout(() => { window.location.replace("./index.html"); }, 500);
   });
 
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-
-    // Bypass health check to avoid false positives
-    // const ok = await healthCheck();
-    // if (!ok) { ... }
 
     signInStatus.textContent = "Signing in...";
     const email = signInEmail.value.trim();
@@ -110,9 +107,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    signInStatus.textContent = "✅ Signed in. Sahifaga o'tilmoqda...";
+    signInStatus.innerHTML = `✅ Signed in. <a href="./index.html" style="color:#fff;text-decoration:underline;">Bosh sahifaga o'tish</a>`;
     setTimeout(() => {
-      window.location.href = "./index.html";
-    }, 100);
+      window.location.replace("./index.html");
+    }, 500);
   });
 });
