@@ -316,11 +316,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
     chatList.innerHTML = "";
     chats.forEach((c) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "chat-item-wrapper";
+
       const item = document.createElement("div");
       item.className = "chat-item";
       item.textContent = c.title || "Untitled chat";
+      item.style.flex = "1";
       item.addEventListener("click", () => openChat(c));
-      chatList.appendChild(item);
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn-del";
+      delBtn.innerHTML = "🗑️";
+      delBtn.title = "O'chirish";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteLocalChat(c.id);
+      });
+
+      wrapper.appendChild(item);
+      wrapper.appendChild(delBtn);
+      chatList.appendChild(wrapper);
     });
   }
 
@@ -420,10 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Save to USER scoped local storage
       const list = getLocalChats();
-      // Optional: limit to 20 chats
-      if (list.length >= 20) {
-        // list.pop(); 
-      }
+      // LIMIT REMOVED per user request
       list.push(newChat);
       saveLocalChats(list);
 
@@ -439,6 +452,19 @@ document.addEventListener("DOMContentLoaded", () => {
     } finally {
       createChatBtn.disabled = false;
     }
+  }
+
+  function deleteLocalChat(id) {
+    if (!confirm("Haqiqatdan ham ushbu chatni o'chirmoqchimisiz?")) return;
+    const list = getLocalChats();
+    const filtered = list.filter(c => c.id !== id);
+    saveLocalChats(filtered);
+
+    if (activeChat && activeChat.id === id) {
+      setActiveChat(null);
+    }
+
+    loadChats();
   }
 
   // Export active chat

@@ -136,12 +136,39 @@ h2 { margin: 0 0 10px 0; font-size: 15px; }
 }
 
 .chat-list { display: grid; gap: 8px; }
-.chat-item {
+.chat-item-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255,255,255,0.04);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 10px;
-  background: rgba(255,255,255,0.04);
+  overflow: hidden;
+}
+.chat-item {
+  flex: 1;
+  padding: 10px 12px;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-item:hover { background: rgba(255,255,255,0.04); }
+
+.btn-del {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.2s, background 0.2s;
+}
+.btn-del:hover {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.15);
 }
 
 .card {
