@@ -59,12 +59,22 @@ export default {
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
     const words = text ? extractWords(text).slice(0, 100) : [];
 
+    // Parallel translation with concurrency control
+    const concurrency = 5;
     const pairs = [];
-    for (let i = 0; i < words.length; i++) {
-      const en = words[i];
-      const uz = await myMemoryTranslate(en);
-      pairs.push({ en, uz });
-      await sleep(60);
+    
+    // Process words in chunks to avoid overwhelming the external API
+    for (let i = 0; i < words.length; i += concurrency) {
+      const chunk = words.slice(i, i + concurrency);
+      const promises = chunk.map(async (en) => {
+        // Add artificial delay to respect rate limits if needed, but run in parallel
+        await sleep(Math.random() * 100); 
+        const uz = await myMemoryTranslate(en);
+        return { en, uz };
+      });
+      
+      const results = await Promise.all(promises);
+      pairs.push(...results);
     }
 
     return json({ text, words, pairs }, 200, cors);

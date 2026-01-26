@@ -7,6 +7,9 @@
 	"name": "ocr-worker",
 	"main": "src/index.js",
 	"compatibility_date": "2025-09-27",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"assets": {
 		// The path to the directory containing the `index.html` file to be served at `/`
 		"directory": "./public"

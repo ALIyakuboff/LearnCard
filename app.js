@@ -223,7 +223,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function doLogout() {
-    try { await supabase.auth.signOut(); } catch {}
+    try { await supabase.auth.signOut(); } catch { }
     setSignedOutUI();
   }
 
@@ -441,7 +441,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       await loadChats();
     } catch (e) {
-      setCreateStatus(`Xato: ${e.message || e}`);
+      setCreateStatus(`Xato: ${e.message || e} (Flashcards created: ${translationMap.size > 0 ? 'Yes' : 'No'})`);
     } finally {
       createChatBtn.disabled = false;
     }
