@@ -72,7 +72,7 @@ export default {
       const promises = chunk.map(async (en) => {
         // Add artificial delay to respect rate limits if needed, but run in parallel
         await sleep(Math.random() * 100);
-        const uz = await myMemoryTranslate(en);
+        const uz = await translateWord(en);
         return { en, uz };
       });
 
@@ -104,26 +104,44 @@ function normalizeWord(w) {
   return String(w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
 }
 
-async function myMemoryTranslate(word) {
-  // Use the new Google Apps Script URL defined at the top or passed here
+async function translateWord(word) {
+  // CONFIG
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+  const MYMEMORY_URL = "https://api.mymemory.translated.net/get";
 
-  // 1. Translate the MAIN word first (Critical)
+  // 1. Primary: Google Apps Script
   let mainTranslation = "";
   try {
     const qMain = encodeURIComponent(word);
     const resMain = await fetch(`${GOOGLE_SCRIPT_URL}?q=${qMain}`, { redirect: "follow" });
     if (resMain.ok) {
       const data = await resMain.json();
-      mainTranslation = data?.translated;
-      if (typeof mainTranslation === "string") mainTranslation = mainTranslation.trim();
+      const t = data?.translated;
+      if (typeof t === "string" && t.trim().length > 0 && t.trim() !== word) {
+        mainTranslation = t.trim();
+      }
     }
   } catch (e) { }
 
-  // Fallback: if main translation blocked, return word itself? No, return empty to show error.
-  if (!mainTranslation) return "";
+  // 2. Backup: MyMemory (if Google failed or returned same word)
+  if (!mainTranslation) {
+    try {
+      const qBak = encodeURIComponent(word);
+      const resBak = await fetch(`${MYMEMORY_URL}?q=${qBak}&langpair=en|uz`);
+      if (resBak.ok) {
+        const data = await resBak.json();
+        const t = data?.responseData?.translatedText;
+        if (typeof t === "string" && t.trim().length > 0 && t.trim() !== word) {
+          mainTranslation = t.trim();
+        }
+      }
+    } catch (e) { }
+  }
 
-  // 2. Fetch Synonyms (English)
+  // If still empty, return explicitly
+  if (!mainTranslation) mainTranslation = "[Tarjima yo'q]";
+
+  // 3. Synonyms (Only if we have a main word, and if main word isn't "Translation missing")
   let synonyms = "";
   try {
     const synRes = await fetch(`https://api.datamuse.com/words?rel_syn=${encodeURIComponent(word)}&max=3`);
@@ -136,7 +154,6 @@ async function myMemoryTranslate(word) {
     }
   } catch (e) { }
 
-  // 3. Combine: "Tarjima (syn1, syn2)"
   if (synonyms) {
     return `${mainTranslation} (${synonyms})`;
   }
