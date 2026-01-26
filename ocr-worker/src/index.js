@@ -107,57 +107,19 @@ function normalizeWord(w) {
 async function translateWord(word) {
   // CONFIG
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
-  const MYMEMORY_URL = "https://api.mymemory.translated.net/get";
 
-  // 1. Primary: Google Apps Script
-  let mainTranslation = "";
+  const q = encodeURIComponent(word);
+  const url = `${GOOGLE_SCRIPT_URL}?q=${q}`;
+
   try {
-    const qMain = encodeURIComponent(word);
-    const resMain = await fetch(`${GOOGLE_SCRIPT_URL}?q=${qMain}`, { redirect: "follow" });
-    if (resMain.ok) {
-      const data = await resMain.json();
-      const t = data?.translated;
-      if (typeof t === "string" && t.trim().length > 0 && t.trim() !== word) {
-        mainTranslation = t.trim();
-      }
-    }
-  } catch (e) { }
-
-  // 2. Backup: MyMemory (if Google failed or returned same word)
-  if (!mainTranslation) {
-    try {
-      const qBak = encodeURIComponent(word);
-      const resBak = await fetch(`${MYMEMORY_URL}?q=${qBak}&langpair=en|uz`);
-      if (resBak.ok) {
-        const data = await resBak.json();
-        const t = data?.responseData?.translatedText;
-        if (typeof t === "string" && t.trim().length > 0 && t.trim() !== word) {
-          mainTranslation = t.trim();
-        }
-      }
-    } catch (e) { }
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) return "";
+    const data = await res.json();
+    const t = data?.translated;
+    return typeof t === "string" ? t.trim() : "";
+  } catch (e) {
+    return "";
   }
-
-  // If still empty, return explicitly
-  if (!mainTranslation) mainTranslation = "[Tarjima yo'q]";
-
-  // 3. Synonyms (Only if we have a main word, and if main word isn't "Translation missing")
-  let synonyms = "";
-  try {
-    const synRes = await fetch(`https://api.datamuse.com/words?rel_syn=${encodeURIComponent(word)}&max=3`);
-    if (synRes.ok) {
-      const synData = await synRes.json();
-      const synList = synData.map(x => x.word).filter(x => x !== word.toLowerCase());
-      if (synList.length > 0) {
-        synonyms = synList.slice(0, 3).join(", ");
-      }
-    }
-  } catch (e) { }
-
-  if (synonyms) {
-    return `${mainTranslation} (${synonyms})`;
-  }
-  return mainTranslation;
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
