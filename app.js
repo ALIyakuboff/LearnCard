@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const signInBtn = el("signInBtn");
   const signUpBtn = el("signUpBtn");
   const signOutBtn = el("signOutBtn");
+  const guestView = el("guestView");
+  const userView = el("userView");
 
   const imageInput = el("imageInput");
   const runOcrBtn = el("runOcrBtn");
@@ -164,28 +166,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setSignedOutUI() {
-    console.log("LearnCard: Setting Signed Out state");
+    console.log("LearnCard: UI Mode -> GUEST");
     sessionUser = null;
-
     if (userLine) userLine.textContent = "- Sign in qiling";
 
-    if (accountLabel) {
-      accountLabel.classList.add("hidden");
-      accountLabel.style.setProperty("display", "none", "important");
+    if (guestView) {
+      guestView.classList.remove("hidden");
+      guestView.style.setProperty("display", "flex", "important");
     }
-
-    if (signInBtn) {
-      signInBtn.classList.remove("hidden");
-      signInBtn.style.setProperty("display", "inline-block", "important");
-    }
-    if (signUpBtn) {
-      signUpBtn.classList.remove("hidden");
-      signUpBtn.style.setProperty("display", "inline-block", "important");
+    if (userView) {
+      userView.classList.add("hidden");
+      userView.style.setProperty("display", "none", "important");
     }
 
     runOcrBtn.disabled = true;
     createChatBtn.disabled = true;
-
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null);
     loadChats();
@@ -193,29 +188,22 @@ document.addEventListener("DOMContentLoaded", () => {
     extractedWords = [];
     translationMap = new Map();
     renderWords();
-    setOcrStatus("");
-    setCreateStatus("");
   }
 
   function setSignedInUI(user) {
-    console.log("LearnCard: Setting Signed In state for", user.email);
+    const email = user?.email || "User";
+    console.log("LearnCard: UI Mode -> USER (" + email + ")");
     sessionUser = user;
-
     if (userLine) userLine.textContent = "- Kirilgan";
 
-    if (accountLabel) {
-      accountLabel.textContent = user.email || "user";
-      accountLabel.classList.remove("hidden");
-      accountLabel.style.setProperty("display", "inline-block", "important");
+    if (guestView) {
+      guestView.classList.add("hidden");
+      guestView.style.setProperty("display", "none", "important");
     }
-
-    if (signInBtn) {
-      signInBtn.classList.add("hidden");
-      signInBtn.style.setProperty("display", "none", "important");
-    }
-    if (signUpBtn) {
-      signUpBtn.classList.add("hidden");
-      signUpBtn.style.setProperty("display", "none", "important");
+    if (userView) {
+      userView.classList.remove("hidden");
+      userView.style.setProperty("display", "flex", "important");
+      if (accountLabel) accountLabel.textContent = email;
     }
 
     runOcrBtn.disabled = false;
