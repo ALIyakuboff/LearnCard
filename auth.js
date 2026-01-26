@@ -54,11 +54,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // (Removed automatic redirect to allow users to access the form)
+  /*
   (async () => {
-    // if already signed in -> home
     const { data } = await supabase.auth.getSession();
     if (data?.session?.user) window.location.href = "./index.html";
   })();
+  */
 
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
