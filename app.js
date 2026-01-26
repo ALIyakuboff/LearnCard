@@ -172,12 +172,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSignedOutUI() {
     sessionUser = null;
 
-    userLine.textContent = "Sign in qiling.";
-    accountLabel.classList.add("hidden");
-    accountLabel.textContent = "";
+    if (userLine) userLine.textContent = "Sign in qiling.";
+    if (accountLabel) {
+      accountLabel.classList.add("hidden");
+      accountLabel.textContent = "";
+    }
 
-    signInBtn.classList.remove("hidden");
-    signUpBtn.classList.remove("hidden");
+    if (signInBtn) signInBtn.classList.remove("hidden");
+    if (signUpBtn) signUpBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
 
     runOcrBtn.disabled = true;
@@ -186,7 +188,6 @@ document.addEventListener("DOMContentLoaded", () => {
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null);
 
-    // Even if signed out, we show local chats now
     loadChats();
 
     extractedWords = [];
@@ -199,13 +200,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSignedInUI(user) {
     sessionUser = user;
 
-    userLine.textContent = "Kirgansiz.";
-    accountLabel.textContent = user.email || "signed-in";
-    accountLabel.classList.remove("hidden");
+    if (userLine) userLine.textContent = "- Kirgansiz";
+    if (accountLabel) {
+      accountLabel.textContent = user.email || "user";
+      accountLabel.classList.remove("hidden");
+      accountLabel.title = "Sizning akkauntingiz";
+    }
 
-    signInBtn.classList.add("hidden");
-    signUpBtn.classList.add("hidden");
-    // signOutBtn deliberately hidden or removed
+    if (signInBtn) signInBtn.classList.add("hidden");
+    if (signUpBtn) signUpBtn.classList.add("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
 
     runOcrBtn.disabled = false;

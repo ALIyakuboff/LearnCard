@@ -89,10 +89,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    signUpStatus.textContent = "✅ Account created. Endi Sign in qiling (yoki emailni tasdiqlang).";
-    setMode("in");
-    signInEmail.value = email;
-    signInPassword.focus();
+    signUpStatus.textContent = "✅ Account created. Sahifaga o'tilmoqda...";
+    window.location.href = "./index.html";
   });
 
   signInForm.addEventListener("submit", async (e) => {
