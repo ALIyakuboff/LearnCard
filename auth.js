@@ -96,12 +96,9 @@ document.addEventListener("DOMContentLoaded", () => {
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    signInStatus.textContent = "Checking network...";
-    const ok = await healthCheck();
-    if (!ok) {
-      signInStatus.textContent = "❌ Network muammo: Supabase’ga ulanib bo‘lmadi (Failed to fetch).";
-      return;
-    }
+    // Bypass health check to avoid false positives
+    // const ok = await healthCheck();
+    // if (!ok) { ... }
 
     signInStatus.textContent = "Signing in...";
     const email = signInEmail.value.trim();
