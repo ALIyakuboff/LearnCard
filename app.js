@@ -164,22 +164,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setSignedOutUI() {
+    console.log("LearnCard: Setting Signed Out state");
     sessionUser = null;
 
     if (userLine) userLine.textContent = "- Sign in qiling";
 
     if (accountLabel) {
       accountLabel.classList.add("hidden");
-      accountLabel.style.display = "none";
+      accountLabel.style.setProperty("display", "none", "important");
     }
 
     if (signInBtn) {
       signInBtn.classList.remove("hidden");
-      signInBtn.style.display = "inline-block";
+      signInBtn.style.setProperty("display", "inline-block", "important");
     }
     if (signUpBtn) {
       signUpBtn.classList.remove("hidden");
-      signUpBtn.style.display = "inline-block";
+      signUpBtn.style.setProperty("display", "inline-block", "important");
     }
 
     runOcrBtn.disabled = true;
@@ -197,6 +198,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setSignedInUI(user) {
+    console.log("LearnCard: Setting Signed In state for", user.email);
     sessionUser = user;
 
     if (userLine) userLine.textContent = "- Kirilgan";
@@ -204,16 +206,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (accountLabel) {
       accountLabel.textContent = user.email || "user";
       accountLabel.classList.remove("hidden");
-      accountLabel.style.display = "inline-block";
+      accountLabel.style.setProperty("display", "inline-block", "important");
     }
 
     if (signInBtn) {
       signInBtn.classList.add("hidden");
-      signInBtn.style.display = "none";
+      signInBtn.style.setProperty("display", "none", "important");
     }
     if (signUpBtn) {
       signUpBtn.classList.add("hidden");
-      signUpBtn.style.display = "none";
+      signUpBtn.style.setProperty("display", "none", "important");
     }
 
     runOcrBtn.disabled = false;

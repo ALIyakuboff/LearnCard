@@ -54,13 +54,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // (Removed automatic redirect to allow users to access the form)
-  /*
+  // (Removed automatic redirect loop)
   (async () => {
     const { data } = await supabase.auth.getSession();
-    if (data?.session?.user) window.location.href = "./index.html";
+    // If the user is on this page, they might want to switch accounts or login
+    // We don't auto-redirect home anymore, but we can log state
+    console.log("Auth Page State:", data?.session?.user ? "Signed In" : "Signed Out");
   })();
-  */
 
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
