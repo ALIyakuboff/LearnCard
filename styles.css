@@ -112,8 +112,6 @@ h2 {
   border-radius: 999px;
   opacity: 1;
   font-weight: 600;
-  display: none;
-  /* Hidden by default, JS will show it */
 }
 
 /* AUTH BUTTONS REFINEMENT */
