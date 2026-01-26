@@ -43,6 +43,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const exampleText = el("exampleText");
   const prevBtn = el("prevBtn");
   const nextBtn = el("nextBtn");
+  const speakBtn = el("speakBtn");
+  const speakBtnBack = el("speakBtnBack");
+
+  // ... (existing code)
+
 
   const exportBtn = el("exportBtn");
   const importBtn = el("importBtn");
@@ -410,6 +415,21 @@ document.addEventListener("DOMContentLoaded", () => {
     exampleText.textContent = "";
   }
 
+  // --- TEXT TO SPEECH ---
+  function speakActiveWord() {
+    if (!activeCards[cardIndex]) return;
+    const text = activeCards[cardIndex].en;
+    if (!text) return;
+
+    // Use native Speech Synthesis
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 0.9; // Slightly slower for clarity
+    window.speechSynthesis.cancel(); // Stop current speech
+    window.speechSynthesis.speak(utterance);
+  }
+  // ---------------------
+
   async function createChatFromWords() {
     if (!sessionUser) return setCreateStatus("Avval Sign in qiling.");
     if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval Scan qiling.");
@@ -523,6 +543,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   createChatBtn.addEventListener("click", createChatFromWords);
+
+  const handleSpeak = (e) => {
+    e.stopPropagation(); // Don't flip card
+    speakActiveWord();
+  };
+
+  if (speakBtn) speakBtn.addEventListener("click", handleSpeak);
+  if (speakBtnBack) speakBtnBack.addEventListener("click", handleSpeak);
 
   card.addEventListener("click", () => {
     if (cardBack.classList.contains("hidden")) showBack(); else showFront();
