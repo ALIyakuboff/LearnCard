@@ -185,18 +185,31 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setSignedInUI(user) {
-    const email = user?.email || "User";
-    console.log("LearnCard: UI State -> USER (" + email + ")");
+    // OMNI-DETECTION: Check multiple paths for email
+    const email = user?.email || user?.user_metadata?.email || user?.identities?.[0]?.identity_data?.email || "Signed In";
+    console.log("LearnCard OMNI_CHECK: " + email);
+
     sessionUser = user;
     if (userLine) userLine.textContent = "Kirgansiz.";
 
     if (headerActions) {
       headerActions.setAttribute("data-auth", "signed-in");
-      if (accountLabel) accountLabel.textContent = email;
+      if (accountLabel) {
+        accountLabel.textContent = email;
+        accountLabel.title = "ID: " + user.id;
+      }
     }
 
     runOcrBtn.disabled = false;
     createChatBtn.disabled = false;
+
+    // WATCHDOG: Force UI state every 1s for 5s to prevent regressions
+    let count = 0;
+    const interval = setInterval(() => {
+      if (headerActions) headerActions.setAttribute("data-auth", "signed-in");
+      if (accountLabel) accountLabel.textContent = email;
+      if (++count > 5) clearInterval(interval);
+    }, 1000);
   }
 
   async function refreshSession() {
