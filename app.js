@@ -1,8 +1,6 @@
-// app.js — LearnCard asosiy mantiq (OCR + Translation + Flashcards)
-// To'liq ishlaydigan versiya: chat o'chirish, import, export
+// app.js — FULL FINAL (Logout + JPG/PNG safe + E301 retry + OCR+Translate via Worker + RLS-safe chat limit)
 
 document.addEventListener("DOMContentLoaded", () => {
-  // ✅ Config olib kelish
   const cfg = window.APP_CONFIG || {};
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
@@ -12,32 +10,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
   const safeTrim = (s) => (s || "").trim();
 
-  // ✅ Config validation
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.error("❌ Config missing!", { SUPABASE_URL, SUPABASE_ANON_KEY });
-    alert("⚠️ Config xato! config.js faylini tekshiring.");
-    return;
-  }
-
-  if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
-    console.error("❌ Config invalid!", { SUPABASE_URL, SUPABASE_ANON_KEY });
-    alert("⚠️ Supabase config noto'g'ri! config.js tekshiring.");
-    return;
-  }
-
-  console.log("✅ Config loaded:", { 
-    SUPABASE_URL, 
-    SUPABASE_ANON_KEY: SUPABASE_ANON_KEY.substring(0, 20) + "...",
-    OCR_WORKER_URL 
-  });
-
-  // UI elements
+  // Header/Auth
   const userLine = el("userLine");
   const accountLabel = el("accountLabel");
   const signInBtn = el("signInBtn");
   const signUpBtn = el("signUpBtn");
   const signOutBtn = el("signOutBtn");
 
+  // OCR UI
   const imageInput = el("imageInput");
   const runOcrBtn = el("runOcrBtn");
   const clearScanBtn = el("clearScanBtn");
@@ -51,11 +31,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const manualWord = el("manualWord");
   const addManualWordBtn = el("addManualWordBtn");
 
+  // Create chat
   const chatTitle = el("chatTitle");
   const createChatBtn = el("createChatBtn");
   const createStatus = el("createStatus");
   const chatList = el("chatList");
 
+  // Flashcards
   const activeChatTitle = el("activeChatTitle");
   const activeChatMeta = el("activeChatMeta");
   const card = el("card");
@@ -66,13 +48,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const exampleText = el("exampleText");
   const prevBtn = el("prevBtn");
   const nextBtn = el("nextBtn");
-  const cardCounter = el("cardCounter");
 
+  // Import/Export
   const exportBtn = el("exportBtn");
   const importBtn = el("importBtn");
   const importFile = el("importFile");
   const cardsList = el("cardsList");
 
+  // Status helpers
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
 
@@ -82,46 +65,38 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ocrProgressBar) ocrProgressBar.style.width = "0%";
     if (ocrProgressText) ocrProgressText.textContent = "Starting...";
   }
-
-  function ocrUxHide() { 
-    if (ocrUx) ocrUx.classList.add("hidden"); 
-  }
-
+  function ocrUxHide() { if (ocrUx) ocrUx.classList.add("hidden"); }
   function ocrUxSetProgress(pct, text) {
     const p = Math.max(0, Math.min(100, pct));
     if (ocrProgressBar) ocrProgressBar.style.width = `${p}%`;
     if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
   }
 
-  // Config tekshirish
+  // Guardrails
   if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 10) {
-    setText(userLine, "⚠️ Supabase config noto'g'ri. config.js ni tekshiring.");
+    setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
     return;
   }
-
   if (!OCR_WORKER_URL.startsWith("https://")) {
-    setOcrStatus("⚠️ OCR Worker URL noto'g'ri. config.js tekshiring.");
+    setOcrStatus("OCR Worker URL noto‘g‘ri. config.js -> OCR_WORKER_URL ni tekshiring.");
   }
 
-  // Supabase client
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { 
-      persistSession: true, 
-      autoRefreshToken: true, 
-      detectSessionInUrl: true 
-    },
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   });
 
   // State
   let sessionUser = null;
+
   let extractedWords = [];
   let translationMap = new Map();
+
   let chats = [];
   let activeChat = null;
   let activeCards = [];
   let cardIndex = 0;
 
-  // Helper functions
+  // Utilities
   function normalizeWord(w) {
     return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
   }
@@ -131,23 +106,33 @@ document.addEventListener("DOMContentLoaded", () => {
     const parts = raw.split(/[\s\n\r\t]+/g);
     const seen = new Set();
     const out = [];
-    
     for (const p of parts) {
       const w = normalizeWord(p);
-      if (!w || w.length < 3) continue;
+      if (!w) continue;
+      if (w.length < 3) continue;
       if (seen.has(w)) continue;
       seen.add(w);
       out.push(w);
     }
-    
     return out;
   }
 
-  // Convert image to safe JPG/PNG
+  async function withTimeout(promise, ms, label) {
+    let t;
+    const timeout = new Promise((_, rej) => {
+      t = setTimeout(() => rej(new Error(`${label} timeout (${ms}ms)`)), ms);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  // ✅ JPG/PNG safe conversion (reduces OCR provider issues)
   async function toSafeImageFile(originalFile, maxSide = 1600, jpegQuality = 0.85) {
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
-
     try {
       await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -173,19 +158,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const jpegBlob = await new Promise((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/jpeg", jpegQuality);
       });
-
-      if (jpegBlob) {
-        return new File([jpegBlob], "ocr.jpg", { type: "image/jpeg" });
-      }
+      if (jpegBlob) return new File([jpegBlob], "ocr.jpg", { type: "image/jpeg" });
 
       // Fallback PNG
       const pngBlob = await new Promise((resolve) => {
         canvas.toBlob((b) => resolve(b), "image/png");
       });
-
-      if (pngBlob) {
-        return new File([pngBlob], "ocr.png", { type: "image/png" });
-      }
+      if (pngBlob) return new File([pngBlob], "ocr.png", { type: "image/png" });
 
       return originalFile;
     } finally {
@@ -193,19 +172,95 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Render extracted words
+  // Auth UI
+  function setSignedOutUI() {
+    sessionUser = null;
+
+    userLine.textContent = "Sign in qiling.";
+    if (accountLabel) {
+      accountLabel.classList.add("hidden");
+      accountLabel.textContent = "";
+    }
+
+    if (signInBtn) signInBtn.classList.remove("hidden");
+    if (signUpBtn) signUpBtn.classList.remove("hidden");
+    if (signOutBtn) signOutBtn.classList.add("hidden");
+
+    if (runOcrBtn) runOcrBtn.disabled = true;
+    if (createChatBtn) createChatBtn.disabled = true;
+    if (addManualWordBtn) addManualWordBtn.disabled = true;
+    if (manualWord) manualWord.disabled = true;
+    if (imageInput) imageInput.disabled = true;
+    if (chatTitle) chatTitle.disabled = true;
+    if (exportBtn) exportBtn.disabled = true;
+    if (importBtn) importBtn.disabled = true;
+
+    if (chatList) chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
+    setActiveChat(null);
+
+    extractedWords = [];
+    translationMap = new Map();
+    renderWords();
+
+    setOcrStatus("");
+    setCreateStatus("");
+  }
+
+  function setSignedInUI(user) {
+    sessionUser = user;
+
+    userLine.textContent = "Kirgansiz.";
+    if (accountLabel) {
+      accountLabel.textContent = user?.email || "signed-in";
+      accountLabel.classList.remove("hidden");
+    }
+
+    if (signInBtn) signInBtn.classList.add("hidden");
+    if (signUpBtn) signUpBtn.classList.add("hidden");
+    if (signOutBtn) signOutBtn.classList.remove("hidden");
+
+    if (runOcrBtn) runOcrBtn.disabled = false;
+    if (createChatBtn) createChatBtn.disabled = false;
+    if (addManualWordBtn) addManualWordBtn.disabled = false;
+    if (manualWord) manualWord.disabled = false;
+    if (imageInput) imageInput.disabled = false;
+    if (chatTitle) chatTitle.disabled = false;
+    if (exportBtn) exportBtn.disabled = false;
+    if (importBtn) importBtn.disabled = false;
+  }
+
+  async function refreshSession() {
+    const { data } = await supabase.auth.getSession();
+    const user = data?.session?.user || null;
+    if (!user) return setSignedOutUI();
+    setSignedInUI(user);
+  }
+
+  // Logout (works)
+  async function doLogout() {
+    setCreateStatus("");
+    setOcrStatus("");
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      // even if error, reset UI
+    }
+    setSignedOutUI();
+  }
+
+  // Words chips
   function renderWords() {
     if (!wordsChips) return;
-    
+
     if (!extractedWords.length) {
-      wordsChips.textContent = "Hozircha so'z yo'q.";
+      wordsChips.textContent = "Hozircha so‘z yo‘q.";
       wordsChips.classList.add("muted");
       return;
     }
-    
+
     wordsChips.classList.remove("muted");
     wordsChips.innerHTML = "";
-    
+
     extractedWords.forEach((w) => {
       const chip = document.createElement("div");
       chip.className = "chip";
@@ -220,134 +275,42 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // UI state management
-  function setSignedOutUI() {
-    sessionUser = null;
-
-    userLine.textContent = "Sign in qiling.";
-    accountLabel.classList.add("hidden");
-    accountLabel.textContent = "";
-
-    signInBtn.classList.remove("hidden");
-    signUpBtn.classList.remove("hidden");
-    signOutBtn.classList.add("hidden");
-
-    runOcrBtn.disabled = true;
-    createChatBtn.disabled = true;
-    addManualWordBtn.disabled = true;
-    manualWord.disabled = true;
-    imageInput.disabled = true;
-    chatTitle.disabled = true;
-    exportBtn.disabled = true;
-    importBtn.disabled = true;
-
-    chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
-    setActiveChat(null);
-
-    extractedWords = [];
-    translationMap = new Map();
-    renderWords();
-    setOcrStatus("");
-    setCreateStatus("");
-  }
-
-  function setSignedInUI(user) {
-    sessionUser = user;
-
-    userLine.textContent = "✅ Kirgansiz.";
-    accountLabel.textContent = user.email || "signed-in";
-    accountLabel.classList.remove("hidden");
-
-    signInBtn.classList.add("hidden");
-    signUpBtn.classList.add("hidden");
-    signOutBtn.classList.remove("hidden");
-
-    runOcrBtn.disabled = false;
-    createChatBtn.disabled = false;
-    addManualWordBtn.disabled = false;
-    manualWord.disabled = false;
-    imageInput.disabled = false;
-    chatTitle.disabled = false;
-    exportBtn.disabled = false;
-    importBtn.disabled = false;
-  }
-
-  async function refreshSession() {
-    try {
-      console.log("Checking session...");
-      const { data } = await supabase.auth.getSession();
-      const user = data?.session?.user || null;
-      
-      if (!user) {
-        console.log("❌ No user session");
-        return setSignedOutUI();
-      }
-      
-      console.log("✅ User session found:", user.email);
-      setSignedInUI(user);
-    } catch (error) {
-      console.error("Session check error:", error);
-      setSignedOutUI();
-    }
-  }
-
+  // RLS-safe chat count
   async function getChatCountRlsSafe() {
-    const { count, error } = await supabase
-      .from("vocab_chats")
-      .select("*", { count: "exact", head: true });
-    
-    if (error) throw error;
-    return count || 0;
+    const resp = await withTimeout(
+      supabase.from("vocab_chats").select("*", { count: "exact", head: true }),
+      8000,
+      "chat count"
+    );
+    if (resp.error) throw resp.error;
+    return resp.count || 0;
   }
 
-  // OCR processing
+  // OCR+Translate via Worker (single endpoint returns {text, words, pairs})
   async function runServerOcr(file) {
-    if (!sessionUser) return setOcrStatus("⚠️ Avval Sign in qiling.");
-    if (!OCR_WORKER_URL.startsWith("https://")) {
-      return setOcrStatus("⚠️ Worker URL yo'q.");
-    }
-
-    // ✅ Rasm formatini tekshirish
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-    if (!validTypes.includes(file.type.toLowerCase())) {
-      return setOcrStatus(`❌ Noto'g'ri format: ${file.type}. Faqat JPG/PNG qabul qilinadi.`);
-    }
-
-    // ✅ Rasm hajmini tekshirish
-    const maxSize = 8 * 1024 * 1024; // 8MB
-    if (file.size > maxSize) {
-      return setOcrStatus(`❌ Rasm juda katta: ${(file.size / 1024 / 1024).toFixed(1)}MB. Max: 8MB`);
-    }
-
-    if (file.size < 1024) {
-      return setOcrStatus(`❌ Rasm juda kichik: ${file.size} bytes. Minimum: 1KB`);
-    }
+    if (!sessionUser) return setOcrStatus("Avval Sign in qiling.");
+    if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
 
     ocrUxShow();
-    setOcrStatus("🔄 Preparing image...");
+    setOcrStatus("Preparing image (JPG/PNG safe)...");
     ocrUxSetProgress(10, "Preparing...");
 
     try {
       const fixedFile = await toSafeImageFile(file);
 
-      setOcrStatus("📤 Uploading image...");
+      setOcrStatus("Uploading image (not stored)...");
       ocrUxSetProgress(25, "Uploading...");
 
       const fd = new FormData();
       fd.append("image", fixedFile, fixedFile.name);
 
-      // Retry for E301 errors
+      // retry for E301 once
       let json = {};
       let lastErr = "";
 
       for (let attempt = 1; attempt <= 2; attempt++) {
-        ocrUxSetProgress(55, `🔍 OCR processing... (try ${attempt}/2)`);
-        
-        const res = await fetch(OCR_WORKER_URL, { 
-          method: "POST", 
-          body: fd 
-        });
-        
+        ocrUxSetProgress(55, `OCR server... (try ${attempt}/2)`);
+        const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
         json = await res.json().catch(() => ({}));
 
         if (res.ok) {
@@ -367,44 +330,26 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (lastErr) {
-        // ✅ E301 uchun batafsil xabar
+        setOcrStatus(`Server error: ${lastErr}`);
         if (lastErr.includes("E301")) {
-          setOcrStatus(`❌ E301: Rasm qabul qilinmadi. 
-Yechim: 
-1) Screenshot oling (Win+Shift+S yoki Cmd+Shift+4)
-2) PNG formatda saqlang
-3) Qayta yuklang`);
-        } 
-        // ✅ E500 (API limit)
-        else if (lastErr.includes("E500") || lastErr.includes("limit")) {
-          setOcrStatus(`❌ API limit tugagan! 
-Yechim: config.js da yangi OCR_SPACE_API_KEY kiriting.
-Free key: https://ocr.space/ocrapi`);
+          setOcrStatus("E301: OCR.space rasmni qabul qilmadi. Screenshot qilib yoki JPG/PNG qilib qayta yuboring.");
         }
-        // ✅ Boshqa xatoliklar
-        else {
-          setOcrStatus(`❌ Server error: ${lastErr}`);
-        }
-        
         ocrUxSetProgress(0, "Failed");
         return;
       }
 
       const text = (json?.text || "").trim();
       let words = Array.isArray(json?.words) ? json.words : [];
-      
+
+      // fallback: if worker didn't return words but has text
       if (words.length === 0 && text) {
         words = extractWordsFromText(text);
       }
 
-      extractedWords = words
-        .map(normalizeWord)
-        .filter(Boolean)
-        .slice(0, 100);
+      extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 100);
 
       translationMap = new Map();
       const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
-      
       for (const p of pairs) {
         const en = normalizeWord(p?.en);
         if (!en) continue;
@@ -413,85 +358,52 @@ Free key: https://ocr.space/ocrapi`);
       }
 
       renderWords();
-      setOcrStatus(`✅ Tayyor! So'zlar: ${extractedWords.length}`);
-      ocrUxSetProgress(100, `✅ ${extractedWords.length} words extracted`);
-      
+      setOcrStatus(`Done. Words: ${extractedWords.length}`);
+      ocrUxSetProgress(100, `Done. ${extractedWords.length} words`);
     } catch (e) {
-      setOcrStatus(`❌ OCR error: ${String(e?.message || e)}`);
+      setOcrStatus(`OCR error: ${String(e?.message || e)}`);
       ocrUxSetProgress(0, "Failed");
     } finally {
-      setTimeout(() => ocrUxHide(), 1000);
+      setTimeout(() => ocrUxHide(), 600);
     }
   }
 
-  // Chat management
+  // Chats
   async function loadChats() {
     if (!sessionUser) return;
-    
+
     const { data, error } = await supabase
       .from("vocab_chats")
       .select("id, title, created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
-      chatList.textContent = `❌ Chats error: ${error.message}`;
+      if (chatList) chatList.textContent = `Chats error: ${error.message}`;
       chats = [];
       return;
     }
 
     chats = data || [];
     renderChatList();
-    
-    if (chats.length > 0) {
-      await openChat(chats[0]);
-    } else {
-      setActiveChat(null);
-    }
+
+    if (chats.length > 0) await openChat(chats[0]);
+    else setActiveChat(null);
   }
 
   function renderChatList() {
     if (!sessionUser) return;
-    
+
     if (!chats.length) {
-      chatList.textContent = "Hozircha chat yo'q.";
+      if (chatList) chatList.textContent = "Hozircha chat yo‘q.";
       return;
     }
-    
+
     chatList.innerHTML = "";
-    
     chats.forEach((c) => {
       const item = document.createElement("div");
       item.className = "chat-item";
-      
-      const titleSpan = document.createElement("span");
-      titleSpan.className = "chat-item-title";
-      titleSpan.textContent = c.title || "Untitled chat";
-      titleSpan.addEventListener("click", () => openChat(c));
-      
-      const delBtn = document.createElement("button");
-      delBtn.className = "btn btn-ghost chat-item-delete";
-      delBtn.textContent = "🗑️";
-      delBtn.title = "O'chirish";
-      delBtn.onclick = async (e) => {
-        e.stopPropagation();
-        
-        if (!confirm(`"${c.title}" ni o'chirmoqchimisiz?`)) return;
-        
-        setCreateStatus("🔄 O'chirilmoqda...");
-        
-        try {
-          await supabase.from("vocab_cards").delete().eq("chat_id", c.id);
-          await supabase.from("vocab_chats").delete().eq("id", c.id);
-          
-          setCreateStatus("✅ Chat o'chirildi!");
-          await loadChats();
-        } catch (err) {
-          setCreateStatus(`❌ Xato: ${err.message}`);
-        }
-      };
-      
-      item.appendChild(titleSpan);
-      item.appendChild(delBtn);
+      item.textContent = c.title || "Untitled chat";
+      item.addEventListener("click", () => openChat(c));
       chatList.appendChild(item);
     });
   }
@@ -511,7 +423,7 @@ Free key: https://ocr.space/ocrapi`);
       cardIndex = 0;
       renderCard();
       renderCardsList();
-      setCreateStatus(`❌ Load cards error: ${error.message}`);
+      setCreateStatus(`Load cards error: ${error.message}`);
       return;
     }
 
@@ -523,112 +435,95 @@ Free key: https://ocr.space/ocrapi`);
 
   function setActiveChat(chat) {
     activeChat = chat;
-    
+
     if (!chat) {
-      activeChatTitle.textContent = "🎴 Flashcards";
-      activeChatMeta.textContent = "—";
+      if (activeChatTitle) activeChatTitle.textContent = "Flashcards";
+      if (activeChatMeta) activeChatMeta.textContent = "—";
       activeCards = [];
       cardIndex = 0;
       renderCard();
       renderCardsList();
       return;
     }
-    
-    activeChatTitle.textContent = chat.title || "Untitled chat";
-    activeChatMeta.textContent = "Active";
+
+    if (activeChatTitle) activeChatTitle.textContent = chat.title || "Untitled chat";
+    if (activeChatMeta) activeChatMeta.textContent = "Active";
   }
 
   function renderCardsList() {
+    if (!cardsList) return;
+
     if (!activeChat) {
-      cardsList.textContent = "Chat tanlansa, cardlar ro'yxati shu yerda ko'rinadi.";
+      cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
       return;
     }
-    
     if (!activeCards.length) {
-      cardsList.textContent = "Bu chatda card yo'q.";
+      cardsList.textContent = "Bu chatda card yo‘q.";
       return;
     }
-    
-    cardsList.textContent = activeCards
-      .map((c, i) => `${i + 1}. ${c.en} → ${c.uz || "—"}`)
-      .join("\n");
+
+    cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
   }
 
-  // Card display
-  function showFront() { 
-    cardBack.classList.add("hidden"); 
-    cardFront.classList.remove("hidden"); 
-  }
-
-  function showBack() { 
-    cardFront.classList.add("hidden"); 
-    cardBack.classList.remove("hidden"); 
-  }
+  function showFront() { cardBack.classList.add("hidden"); cardFront.classList.remove("hidden"); }
+  function showBack() { cardFront.classList.add("hidden"); cardBack.classList.remove("hidden"); }
 
   function renderCard() {
+    if (!frontText || !backText) return;
+
     if (!activeChat) {
       showFront();
       frontText.textContent = "Chat tanlang yoki yarating.";
       backText.textContent = "—";
-      exampleText.textContent = "";
-      if (cardCounter) cardCounter.textContent = "0/0";
+      if (exampleText) exampleText.textContent = "";
       return;
     }
-    
     if (!activeCards.length) {
       showFront();
-      frontText.textContent = "Bu chatda card yo'q.";
+      frontText.textContent = "Bu chatda card yo‘q.";
       backText.textContent = "—";
-      exampleText.textContent = "";
-      if (cardCounter) cardCounter.textContent = "0/0";
+      if (exampleText) exampleText.textContent = "";
       return;
     }
-    
     const c = activeCards[cardIndex];
     showFront();
     frontText.textContent = c.en || "—";
     backText.textContent = c.uz || "—";
-    exampleText.textContent = "";
-    
-    if (cardCounter) {
-      cardCounter.textContent = `${cardIndex + 1}/${activeCards.length}`;
-    }
+    if (exampleText) exampleText.textContent = "";
   }
 
-  // Create chat from words
+  // Create chat (RLS-safe)
   async function createChatFromWords() {
-    if (!sessionUser) return setCreateStatus("⚠️ Avval Sign in qiling.");
-    if (!extractedWords.length) {
-      return setCreateStatus("⚠️ So'zlar yo'q. Avval Scan qiling.");
-    }
+    if (!sessionUser) return setCreateStatus("Avval Sign in qiling.");
+    if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval Scan qiling.");
 
     createChatBtn.disabled = true;
 
     try {
-      setCreateStatus("🔄 Chat limiti tekshirilmoqda...");
+      setCreateStatus("Chat limiti tekshirilmoqda...");
       const cnt = await getChatCountRlsSafe();
-      
       if (cnt >= 2) {
-        setCreateStatus("⚠️ Limit: 2 ta chat. Avval bittasini o'chiring.");
+        setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chiring.");
         return;
       }
 
-      const title = safeTrim(chatTitle.value) || 
-        `Reading chat ${new Date().toLocaleString()}`;
+      const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      setCreateStatus("🔄 Chat yaratilmoqda...");
-      
-      const { data: chatRow, error: chatErr } = await supabase
-        .from("vocab_chats")
-        .insert({ user_id: sessionUser.id, title })
-        .select("id, title, created_at")
-        .single();
+      setCreateStatus("Chat yaratilmoqda...");
+      const chatInsert = await withTimeout(
+        supabase.from("vocab_chats")
+          .insert({ user_id: sessionUser.id, title })
+          .select("id, title, created_at")
+          .single(),
+        8000,
+        "chat insert"
+      );
 
-      if (chatErr) throw chatErr;
+      if (chatInsert.error) throw chatInsert.error;
+      const chatRow = chatInsert.data;
 
-      setCreateStatus("🔄 Cardlar saqlanyapti...");
-      
+      setCreateStatus("Cardlar saqlanyapti...");
       const cardRows = words.map((en) => ({
         user_id: sessionUser.id,
         chat_id: chatRow.id,
@@ -636,13 +531,15 @@ Free key: https://ocr.space/ocrapi`);
         uz: translationMap.get(en) || "",
       }));
 
-      const { error: cardsErr } = await supabase
-        .from("vocab_cards")
-        .insert(cardRows);
-      
-      if (cardsErr) throw cardsErr;
+      const cardsInsert = await withTimeout(
+        supabase.from("vocab_cards").insert(cardRows),
+        12000,
+        "cards insert"
+      );
 
-      setCreateStatus(`✅ Tayyor! Chat yaratildi (${words.length} ta so'z).`);
+      if (cardsInsert.error) throw cardsInsert.error;
+
+      setCreateStatus(`✅ Tayyor. Chat yaratildi (${words.length} ta so‘z).`);
 
       extractedWords = [];
       translationMap = new Map();
@@ -651,32 +548,22 @@ Free key: https://ocr.space/ocrapi`);
 
       await loadChats();
       await openChat(chats.find((c) => c.id === chatRow.id) || chatRow);
-      
     } catch (e) {
-      setCreateStatus(`❌ Xato: ${e.message || e}`);
+      setCreateStatus(`Xato: ${e.message || e}`);
     } finally {
       createChatBtn.disabled = false;
     }
   }
 
-  // Export/Import
-  function exportChat() {
-    if (!activeChat) return setCreateStatus("⚠️ Export uchun chat tanlang.");
-    
+  // Export (simple)
+  function exportActiveChat() {
+    if (!activeChat) return setCreateStatus("Export uchun chat tanlang.");
     const payload = {
       title: activeChat.title || "Untitled chat",
       created_at: activeChat.created_at,
-      cards: activeCards.map((c) => ({ 
-        en: c.en, 
-        uz: c.uz || "" 
-      })),
+      cards: activeCards.map((c) => ({ en: c.en, uz: c.uz || "" })),
     };
-    
-    const blob = new Blob(
-      [JSON.stringify(payload, null, 2)], 
-      { type: "application/json" }
-    );
-    
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -685,70 +572,22 @@ Free key: https://ocr.space/ocrapi`);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    
-    setCreateStatus("✅ Exported!");
   }
 
-  async function importChat(file) {
-    if (!sessionUser) return setCreateStatus("⚠️ Avval Sign in qiling.");
-    
-    try {
-      setCreateStatus("🔄 Import qilinmoqda...");
-      
-      const text = await file.text();
-      const data = JSON.parse(text);
-      
-      if (!data.cards || !Array.isArray(data.cards)) {
-        return setCreateStatus("❌ Noto'g'ri JSON format!");
-      }
-      
-      const cnt = await getChatCountRlsSafe();
-      if (cnt >= 2) {
-        return setCreateStatus("⚠️ Limit: 2 ta chat. Avval bittasini o'chiring.");
-      }
-      
-      const title = data.title || "Imported chat";
-      
-      const { data: chatRow, error: chatErr } = await supabase
-        .from("vocab_chats")
-        .insert({ user_id: sessionUser.id, title })
-        .select("id, title, created_at")
-        .single();
-      
-      if (chatErr) throw chatErr;
-      
-      const cardRows = data.cards.map((c) => ({
-        user_id: sessionUser.id,
-        chat_id: chatRow.id,
-        en: c.en,
-        uz: c.uz || "",
-      }));
-      
-      await supabase.from("vocab_cards").insert(cardRows);
-      
-      setCreateStatus(`✅ Import muvaffaqiyatli! ${cardRows.length} ta card.`);
-      await loadChats();
-      await openChat(chatRow);
-      
-    } catch (e) {
-      setCreateStatus(`❌ Import xato: ${e.message}`);
-    }
-  }
+  /* =========================
+     Events
+  ========================= */
 
-  // Event listeners
-  signOutBtn.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    setSignedOutUI();
-  });
+  if (signOutBtn) signOutBtn.addEventListener("click", doLogout);
 
-  runOcrBtn.addEventListener("click", async () => {
-    const file = imageInput.files?.[0];
-    if (!file) return setOcrStatus("⚠️ Avval rasm tanlang.");
+  if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
+    const file = imageInput?.files?.[0];
+    if (!file) return setOcrStatus("Avval rasm tanlang.");
     await runServerOcr(file);
   });
 
-  clearScanBtn.addEventListener("click", () => {
-    imageInput.value = "";
+  if (clearScanBtn) clearScanBtn.addEventListener("click", () => {
+    if (imageInput) imageInput.value = "";
     extractedWords = [];
     translationMap = new Map();
     renderWords();
@@ -757,102 +596,66 @@ Free key: https://ocr.space/ocrapi`);
     ocrUxHide();
   });
 
-  addManualWordBtn.addEventListener("click", () => {
-    const w = normalizeWord(manualWord.value);
+  if (addManualWordBtn) addManualWordBtn.addEventListener("click", () => {
+    const w = normalizeWord(manualWord?.value);
     if (!w) return;
     if (!extractedWords.includes(w)) extractedWords.push(w);
-    manualWord.value = "";
+    if (manualWord) manualWord.value = "";
     renderWords();
   });
 
-  manualWord.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { 
-      e.preventDefault(); 
-      addManualWordBtn.click(); 
-    }
+  if (manualWord) manualWord.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addManualWordBtn?.click(); }
   });
 
-  createChatBtn.addEventListener("click", createChatFromWords);
+  if (createChatBtn) createChatBtn.addEventListener("click", createChatFromWords);
 
-  card.addEventListener("click", () => {
-    if (cardBack.classList.contains("hidden")) showBack(); 
-    else showFront();
+  if (card) card.addEventListener("click", () => {
+    if (cardBack.classList.contains("hidden")) showBack(); else showFront();
   });
 
-  prevBtn.addEventListener("click", () => {
+  if (prevBtn) prevBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length;
     renderCard();
   });
 
-  nextBtn.addEventListener("click", () => {
+  if (nextBtn) nextBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex + 1) % activeCards.length;
     renderCard();
   });
 
-  exportBtn.addEventListener("click", exportChat);
+  if (exportBtn) exportBtn.addEventListener("click", exportActiveChat);
 
-  importBtn.addEventListener("click", () => {
-    importFile.value = "";
-    importFile.click();
-  });
-
-  importFile.addEventListener("change", async () => {
-    const file = importFile.files?.[0];
-    if (!file) return;
-    await importChat(file);
-  });
-
-  // Keyboard navigation
-  document.addEventListener("keydown", (e) => {
-    if (!activeChat || !activeCards.length) return;
-    
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      prevBtn.click();
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      nextBtn.click();
-    } else if (e.key === " ") {
-      e.preventDefault();
-      card.click();
+  if (importBtn) importBtn.addEventListener("click", () => {
+    if (importFile) {
+      importFile.value = "";
+      importFile.click();
     }
   });
 
-  // Initialization
+  if (importFile) importFile.addEventListener("change", async () => {
+    setCreateStatus("Import ixtiyoriy (keyin qo‘shamiz).");
+  });
+
+  /* =========================
+     Init
+  ========================= */
+
   (async () => {
-    console.log("🚀 Initializing LearnCard...");
-    
     extractedWords = [];
     translationMap = new Map();
     renderWords();
     setActiveChat(null);
 
     await refreshSession();
-    
-    if (sessionUser) {
-      console.log("Loading chats for user:", sessionUser.email);
-      await loadChats();
-    } else {
-      console.log("No user, skipping chat load");
-    }
-    
-    console.log("✅ LearnCard initialized");
+    if (sessionUser) await loadChats();
   })();
 
-  // Auth state changes
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log("Auth state changed:", event);
-    
+  supabase.auth.onAuthStateChange(async (_event, session) => {
     const user = session?.user || null;
-    
-    if (!user) {
-      console.log("User signed out");
-      return setSignedOutUI();
-    }
-    
-    console.log("User signed in:", user.email);
+    if (!user) return setSignedOutUI();
     setSignedInUI(user);
     await loadChats();
   });
