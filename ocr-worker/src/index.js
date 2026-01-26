@@ -62,28 +62,35 @@ export default {
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
     const words = text ? extractWords(text).slice(0, 100) : [];
 
-    // Batch translation for reliability and speed (Groups of 30)
-    const batchSize = 30;
+    // Numbered batching for strict alignment
+    const batchSize = 25;
     const pairs = [];
 
     for (let i = 0; i < words.length; i += batchSize) {
       const chunk = words.slice(i, i + batchSize);
-      // Join with newlines
-      const textToTranslate = chunk.join("\n");
+      // Format: "1. word1\n2. word2..." to force line separation
+      const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
 
       try {
         const translatedBlock = await translateWord(textToTranslate);
-        // Split back by newline
-        const translatedLines = translatedBlock.split("\n").map(s => s.trim());
 
-        chunk.forEach((en, index) => {
-          pairs.push({
-            en,
-            uz: translatedLines[index] || ""
-          });
+        // Robust parser: look for number prefixes (1., 2.. etc) or split by line
+        const lines = translatedBlock.split("\n");
+        const results = new Array(chunk.length).fill("");
+
+        let foundIdx = 0;
+        for (const line of lines) {
+          const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
+          if (clean && foundIdx < chunk.length) {
+            results[foundIdx] = clean;
+            foundIdx++;
+          }
+        }
+
+        chunk.forEach((en, idx) => {
+          pairs.push({ en, uz: results[idx] || "" });
         });
       } catch (e) {
-        // Fallback for this chunk
         for (const en of chunk) pairs.push({ en, uz: "" });
       }
     }
