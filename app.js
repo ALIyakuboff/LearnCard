@@ -166,22 +166,27 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSignedOutUI() {
     sessionUser = null;
 
-    if (userLine) userLine.textContent = "Sign in qiling.";
+    if (userLine) userLine.textContent = "- Sign in qiling";
+
     if (accountLabel) {
       accountLabel.classList.add("hidden");
-      accountLabel.textContent = "";
+      accountLabel.style.display = "none";
     }
 
-    if (signInBtn) signInBtn.classList.remove("hidden");
-    if (signUpBtn) signUpBtn.classList.remove("hidden");
-    if (signOutBtn) signOutBtn.classList.add("hidden");
+    if (signInBtn) {
+      signInBtn.classList.remove("hidden");
+      signInBtn.style.display = "inline-block";
+    }
+    if (signUpBtn) {
+      signUpBtn.classList.remove("hidden");
+      signUpBtn.style.display = "inline-block";
+    }
 
     runOcrBtn.disabled = true;
     createChatBtn.disabled = true;
 
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null);
-
     loadChats();
 
     extractedWords = [];
@@ -194,7 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSignedInUI(user) {
     sessionUser = user;
 
-    if (userLine) userLine.textContent = "- Kirish";
+    if (userLine) userLine.textContent = "- Kirilgan";
 
     if (accountLabel) {
       accountLabel.textContent = user.email || "user";
