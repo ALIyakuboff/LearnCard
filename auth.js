@@ -110,13 +110,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Hard verify session saved
-    const { data } = await supabase.auth.getSession();
-    if (!data?.session?.user) {
-      signInStatus.textContent = "❌ Signed in, lekin session saqlanmadi (storage blok bo‘lishi mumkin).";
-      return;
-    }
-
-    window.location.href = "./index.html";
+    signInStatus.textContent = "✅ Signed in. Sahifaga o'tilmoqda...";
+    setTimeout(() => {
+      window.location.href = "./index.html";
+    }, 100);
   });
 });
