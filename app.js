@@ -165,19 +165,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const headerActions = document.querySelector(".header-actions");
+
   function setSignedOutUI() {
-    console.log("LearnCard: UI Mode -> GUEST");
+    console.log("LearnCard: UI State -> GUEST");
     sessionUser = null;
     if (userLine) userLine.textContent = "- Sign in qiling";
-
-    if (guestView) {
-      guestView.classList.remove("hidden");
-      guestView.style.setProperty("display", "flex", "important");
-    }
-    if (userView) {
-      userView.classList.add("hidden");
-      userView.style.setProperty("display", "none", "important");
-    }
+    if (headerActions) headerActions.setAttribute("data-auth", "signed-out");
 
     runOcrBtn.disabled = true;
     createChatBtn.disabled = true;
@@ -192,17 +186,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function setSignedInUI(user) {
     const email = user?.email || "User";
-    console.log("LearnCard: UI Mode -> USER (" + email + ")");
+    console.log("LearnCard: UI State -> USER (" + email + ")");
     sessionUser = user;
     if (userLine) userLine.textContent = "- Kirilgan";
 
-    if (guestView) {
-      guestView.classList.add("hidden");
-      guestView.style.setProperty("display", "none", "important");
-    }
-    if (userView) {
-      userView.classList.remove("hidden");
-      userView.style.setProperty("display", "flex", "important");
+    if (headerActions) {
+      headerActions.setAttribute("data-auth", "signed-in");
       if (accountLabel) accountLabel.textContent = email;
     }
 
