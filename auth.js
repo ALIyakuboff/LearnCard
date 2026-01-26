@@ -89,6 +89,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    // PERSIST: Store email for immediate UI retrieval
+    localStorage.setItem("LC_USER_EMAIL", email);
+
     // Simplified auto-redirect with fallback link
     signUpStatus.innerHTML = `✅ Account created. <a href="./index.html" style="color:#fff;text-decoration:underline;">Bosh sahifaga o'tish</a>`;
     setTimeout(() => { window.location.replace("./index.html"); }, 500);
@@ -106,6 +109,9 @@ document.addEventListener("DOMContentLoaded", () => {
       signInStatus.textContent = `❌ ${error.message}`;
       return;
     }
+
+    // PERSIST: Store email for immediate UI retrieval
+    localStorage.setItem("LC_USER_EMAIL", email);
 
     signInStatus.innerHTML = `✅ Signed in. <a href="./index.html" style="color:#fff;text-decoration:underline;">Bosh sahifaga o'tish</a>`;
     setTimeout(() => {

@@ -168,8 +168,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const headerActions = document.querySelector(".header-actions");
 
   function setSignedOutUI() {
-    console.log("LearnCard: UI State -> GUEST");
+    console.log("LearnCard: UI Mode -> GUEST");
     sessionUser = null;
+    localStorage.removeItem("LC_USER_EMAIL");
+
+    document.body.setAttribute("data-auth", "signed-out");
     if (userLine) userLine.textContent = "- Sign in qiling";
     if (headerActions) headerActions.setAttribute("data-auth", "signed-out");
 
@@ -178,38 +181,33 @@ document.addEventListener("DOMContentLoaded", () => {
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null);
     loadChats();
-
-    extractedWords = [];
-    translationMap = new Map();
-    renderWords();
+    extractedWords = []; translationMap = new Map(); renderWords();
   }
 
   function setSignedInUI(user) {
-    // OMNI-DETECTION: Check multiple paths for email
-    const email = user?.email || user?.user_metadata?.email || user?.identities?.[0]?.identity_data?.email || "Signed In";
-    console.log("LearnCard OMNI_CHECK: " + email);
+    // ULTRABOOST: Priority on LocalStorage backup for instant feel
+    const email = localStorage.getItem("LC_USER_EMAIL") || user?.email || user?.user_metadata?.email || "Kirilgan";
+    console.log("LearnCard IRONCLAD_SYNC: " + email);
 
     sessionUser = user;
+    document.body.setAttribute("data-auth", "signed-in");
     if (userLine) userLine.textContent = "Kirgansiz.";
 
     if (headerActions) {
       headerActions.setAttribute("data-auth", "signed-in");
-      if (accountLabel) {
-        accountLabel.textContent = email;
-        accountLabel.title = "ID: " + user.id;
-      }
+      if (accountLabel) accountLabel.textContent = email;
     }
 
     runOcrBtn.disabled = false;
     createChatBtn.disabled = false;
 
-    // WATCHDOG: Force UI state every 1s for 5s to prevent regressions
+    // WATCHDOG: Beat race conditions by syncing UI state multiple times
     let count = 0;
-    const interval = setInterval(() => {
-      if (headerActions) headerActions.setAttribute("data-auth", "signed-in");
+    const itv = setInterval(() => {
+      document.body.setAttribute("data-auth", "signed-in");
       if (accountLabel) accountLabel.textContent = email;
-      if (++count > 5) clearInterval(interval);
-    }, 1000);
+      if (++count > 10) clearInterval(itv);
+    }, 500);
   }
 
   async function refreshSession() {

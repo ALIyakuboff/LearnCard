@@ -90,17 +90,22 @@ h2 {
   gap: 8px;
 }
 
-/* DATA-AUTH STATE CONTROLS */
+/* GLOBAL AUTH STATE CONTROLS */
+body[data-auth="signed-in"] #guestView {
+  display: none !important;
+}
+
+body[data-auth="signed-out"] #userView {
+  display: none !important;
+}
+
+body[data-auth="signed-in"] #userView {
+  display: flex !important;
+}
+
+/* DEPRECATED: Keeping for legacy actions if any */
 .header-actions[data-auth="signed-in"] #guestView {
   display: none !important;
-}
-
-.header-actions[data-auth="signed-out"] #userView {
-  display: none !important;
-}
-
-.header-actions[data-auth="signed-in"] #userView {
-  display: flex !important;
 }
 
 .account-box {
