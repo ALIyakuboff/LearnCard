@@ -1,5 +1,8 @@
 export default {
   async fetch(request, env) {
+    // URL provided by user
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+
     const origin = request.headers.get("Origin") || "*";
     const cors = {
       "Access-Control-Allow-Origin": origin,
@@ -62,17 +65,17 @@ export default {
     // Parallel translation with concurrency control
     const concurrency = 5;
     const pairs = [];
-    
+
     // Process words in chunks to avoid overwhelming the external API
     for (let i = 0; i < words.length; i += concurrency) {
       const chunk = words.slice(i, i + concurrency);
       const promises = chunk.map(async (en) => {
         // Add artificial delay to respect rate limits if needed, but run in parallel
-        await sleep(Math.random() * 100); 
+        await sleep(Math.random() * 100);
         const uz = await myMemoryTranslate(en);
         return { en, uz };
       });
-      
+
       const results = await Promise.all(promises);
       pairs.push(...results);
     }
@@ -102,15 +105,20 @@ function normalizeWord(w) {
 }
 
 async function myMemoryTranslate(word) {
+  // Use the new Google Apps Script URL defined at the top or passed here
+  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+
   const q = encodeURIComponent(word);
-  const url = `https://api.mymemory.translated.net/get?q=${q}&langpair=en|uz`;
+  const url = `${GOOGLE_SCRIPT_URL}?q=${q}`;
+
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { redirect: "follow" });
     if (!res.ok) return "";
     const data = await res.json();
-    const t = data?.responseData?.translatedText;
+    const t = data?.translated;
     return typeof t === "string" ? t.trim() : "";
-  } catch {
+  } catch (e) {
+    // console.log("Translation error:", e);
     return "";
   }
 }

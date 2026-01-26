@@ -224,7 +224,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function doLogout() {
     try { await supabase.auth.signOut(); } catch { }
-    setSignedOutUI();
+    // Force reload to clear all state
+    window.location.reload();
   }
 
   async function runServerOcr(file) {
