@@ -385,22 +385,23 @@ h2 {
 /* MOBILE OPTIMIZATIONS */
 @media (max-width: 600px) {
   .header {
-    flex-direction: column;
+    flex-direction: row;
+    /* Stay horizontal */
     align-items: center;
-    text-align: center;
-    padding-top: 20px;
+    justify-content: space-between;
+    padding-top: 10px;
+    gap: 12px;
   }
 
   .header-actions {
-    width: 100%;
-    border-top: 1px solid var(--border);
-    padding-top: 12px;
-    justify-content: center;
+    width: auto;
+    border-top: none;
+    padding-top: 0;
   }
 
   .account-box {
-    justify-items: center;
-    width: 100%;
+    justify-items: end;
+    width: auto;
   }
 
   .card-text {
