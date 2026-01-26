@@ -62,22 +62,30 @@ export default {
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
     const words = text ? extractWords(text).slice(0, 100) : [];
 
-    // Parallel translation with concurrency control (Reduced for reliability)
-    const concurrency = 2;
+    // Batch translation for reliability and speed (Groups of 30)
+    const batchSize = 30;
     const pairs = [];
 
-    // Process words in chunks to avoid overwhelming the external API
-    for (let i = 0; i < words.length; i += concurrency) {
-      const chunk = words.slice(i, i + concurrency);
-      const promises = chunk.map(async (en) => {
-        // Larger delay and jitter
-        await sleep(200 + Math.random() * 300);
-        const uz = await translateWord(en);
-        return { en, uz };
-      });
+    for (let i = 0; i < words.length; i += batchSize) {
+      const chunk = words.slice(i, i + batchSize);
+      // Join with newlines
+      const textToTranslate = chunk.join("\n");
 
-      const results = await Promise.all(promises);
-      pairs.push(...results);
+      try {
+        const translatedBlock = await translateWord(textToTranslate);
+        // Split back by newline
+        const translatedLines = translatedBlock.split("\n").map(s => s.trim());
+
+        chunk.forEach((en, index) => {
+          pairs.push({
+            en,
+            uz: translatedLines[index] || ""
+          });
+        });
+      } catch (e) {
+        // Fallback for this chunk
+        for (const en of chunk) pairs.push({ en, uz: "" });
+      }
     }
 
     return json({ text, words, pairs }, 200, cors);
