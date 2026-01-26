@@ -224,7 +224,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function doLogout() {
     try { await supabase.auth.signOut(); } catch { }
-    // Force reload to clear all state
+    // Force clear all storage to ensure nothing remains
+    localStorage.clear();
+    sessionStorage.clear();
     window.location.reload();
   }
 
