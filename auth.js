@@ -1,13 +1,16 @@
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
-  const SUPABASE_URL = cfg.SUPABASE_URL || "";
-  const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
-
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: window.localStorage, // explicit
+    },
   });
 
   const el = (id) => document.getElementById(id);
+
   const tabSignUp = el("tabSignUp");
   const tabSignIn = el("tabSignIn");
   const signUpForm = el("signUpForm");
@@ -26,63 +29,67 @@ document.addEventListener("DOMContentLoaded", () => {
     tabSignIn.classList.toggle("active", mode === "in");
     signUpForm.classList.toggle("hidden", mode !== "up");
     signInForm.classList.toggle("hidden", mode !== "in");
+    signUpStatus.textContent = "";
+    signInStatus.textContent = "";
   }
 
   setMode((window.location.hash || "").includes("signup") ? "up" : "in");
+
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
-  function setStatus(node, msg) {
-    if (node) node.textContent = msg || "";
-  }
-
-  async function checkReachability() {
-    // Health check (tarmoq muammosini aniq ko‘rsatadi)
-    try {
-      const r = await fetch(`${SUPABASE_URL}/auth/v1/health`, { method: "GET" });
-      return r.ok;
-    } catch {
-      return false;
-    }
-  }
+  // If already signed in, go home
+  (async () => {
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) window.location.href = "./index.html";
+  })();
 
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    setStatus(signUpStatus, "Creating...");
+    signUpStatus.textContent = "Creating...";
 
-    const ok = await checkReachability();
-    if (!ok) {
-      setStatus(signUpStatus, "❌ Network: Supabase serveriga ulanib bo‘lmadi (Failed to fetch). QUIC/Proxy/Antivirus tekshiring.");
+    const email = signUpEmail.value.trim();
+    const password = signUpPassword.value.trim();
+
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      signUpStatus.textContent = `❌ ${error.message}`;
       return;
     }
 
-    const { error } = await supabase.auth.signUp({
-      email: signUpEmail.value.trim(),
-      password: signUpPassword.value.trim(),
-    });
+    // Some projects require email confirm; session may be null
+    const { data } = await supabase.auth.getSession();
+    if (data?.session?.user) {
+      window.location.href = "./index.html";
+      return;
+    }
 
-    if (error) return setStatus(signUpStatus, `❌ ${error.message}`);
-    setStatus(signUpStatus, "✅ Account created. Now sign in.");
+    signUpStatus.textContent = "✅ Account created. Endi Sign in qiling (yoki emailni tasdiqlang).";
     setMode("in");
-    signInEmail.value = signUpEmail.value.trim();
+    signInEmail.value = email;
+    signInPassword.focus();
   });
 
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    setStatus(signInStatus, "Signing in...");
+    signInStatus.textContent = "Signing in...";
 
-    const ok = await checkReachability();
-    if (!ok) {
-      setStatus(signInStatus, "❌ Network: Supabase serveriga ulanib bo‘lmadi (Failed to fetch). QUIC/Proxy/Antivirus tekshiring.");
+    const email = signInEmail.value.trim();
+    const password = signInPassword.value.trim();
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      signInStatus.textContent = `❌ ${error.message}`;
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: signInEmail.value.trim(),
-      password: signInPassword.value.trim(),
-    });
+    // Hard verify session
+    const { data: s } = await supabase.auth.getSession();
+    if (!s?.session?.user) {
+      signInStatus.textContent = "❌ Signed in, lekin session saqlanmadi (storage blok bo‘lishi mumkin).";
+      return;
+    }
 
-    if (error) return setStatus(signInStatus, `❌ ${error.message}`);
     window.location.href = "./index.html";
   });
 });

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LearnCard - OCR Flashcards</title>
+    <title>LearnCard</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
 
@@ -29,9 +29,9 @@
 
     <main class="container layout">
       <section class="panel">
-        <h2>📸 Rasm yuklash (OCR)</h2>
+        <h2>Rasm yuklash (OCR)</h2>
         <div class="muted small">
-          JPG/PNG ishlaydi. Rasm saqlanmaydi. OCR+tarjima Worker'da bajariladi.
+          JPG/PNG ishlaydi. Rasm saqlanmaydi. OCR+tarjima Worker’da bajariladi.
         </div>
 
         <div class="form" style="margin-top:10px;">
@@ -41,7 +41,7 @@
           </label>
 
           <div class="row">
-            <button id="runOcrBtn" class="btn btn-primary" type="button">🔍 Scan (OCR)</button>
+            <button id="runOcrBtn" class="btn btn-primary" type="button">Scan (OCR)</button>
             <button id="clearScanBtn" class="btn btn-ghost" type="button">Clear</button>
           </div>
 
@@ -57,13 +57,13 @@
 
           <div class="divider"></div>
 
-          <h2>📝 Ajratilgan so'zlar</h2>
-          <div class="muted small">So'zni bossangiz o'chadi. Keyin "Translate & Create Chat".</div>
-          <div id="wordsChips" class="chips muted">Hozircha so'z yo'q.</div>
+          <h2>Ajratilgan so‘zlar</h2>
+          <div class="muted small">So‘zni bossangiz o‘chadi. Keyin “Translate & Create Chat”.</div>
+          <div id="wordsChips" class="chips muted">Hozircha so‘z yo‘q.</div>
 
           <div class="row">
             <label class="label" style="flex:1;">
-              So'z qo'shish (manual)
+              So‘z qo‘shish (manual)
               <input id="manualWord" class="input" type="text" placeholder="e.g., allocate" />
             </label>
             <button id="addManualWordBtn" class="btn btn-secondary" type="button">Add</button>
@@ -76,23 +76,23 @@
             <input id="chatTitle" class="input" type="text" placeholder="e.g., Reading Unit 3" />
           </label>
 
-          <button id="createChatBtn" class="btn btn-primary" type="button">✨ Translate & Create Chat</button>
+          <button id="createChatBtn" class="btn btn-primary" type="button">Translate & Create Chat</button>
           <div id="createStatus" class="status muted"></div>
 
           <div class="divider"></div>
 
-          <h2>💬 Chatlar (max 2)</h2>
+          <h2>Chatlar (max 2)</h2>
           <div id="chatList" class="chat-list muted">Sign in qiling — chatlar shu yerda chiqadi.</div>
         </div>
       </section>
 
       <section class="panel">
         <div class="card-header">
-          <h2 id="activeChatTitle">🎴 Flashcards</h2>
+          <h2 id="activeChatTitle">Flashcards</h2>
           <div class="pill" id="activeChatMeta">—</div>
         </div>
 
-        <div class="muted small">Card ustiga bosing: flip qilish uchun.</div>
+        <div class="muted small">Card ustiga bosing: flip.</div>
 
         <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
           <div class="card-face" id="cardFront">
@@ -108,26 +108,25 @@
         </div>
 
         <div class="row row-center">
-          <button id="prevBtn" class="btn btn-secondary" type="button">⬅️ Prev</button>
-          <div class="pill" id="cardCounter">0/0</div>
-          <button id="nextBtn" class="btn btn-secondary" type="button">Next ➡️</button>
+          <button id="prevBtn" class="btn btn-secondary" type="button">Prev</button>
+          <button id="nextBtn" class="btn btn-secondary" type="button">Next</button>
         </div>
 
         <div class="divider"></div>
 
-        <h2>💾 Export / Import</h2>
+        <h2>Export / Import</h2>
         <div class="list-actions row">
-          <button id="exportBtn" class="btn btn-ghost" type="button">📥 Export JSON</button>
-          <button id="importBtn" class="btn btn-ghost" type="button">📤 Import JSON</button>
+          <button id="exportBtn" class="btn btn-ghost" type="button">Export JSON</button>
+          <button id="importBtn" class="btn btn-ghost" type="button">Import JSON</button>
           <input id="importFile" type="file" accept="application/json" class="hidden" />
         </div>
 
-        <div id="cardsList" class="list muted">Chat tanlansa, cardlar ro'yxati shu yerda ko'rinadi.</div>
+        <div id="cardsList" class="list muted">Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.</div>
       </section>
     </main>
 
     <footer class="container footer muted">
-      <p>🚀 OCR+Translate server-side. Har user: max 2 chat. Made with ❤️</p>
+      <p>OCR+Translate server-side. Har user: max 2 chat.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

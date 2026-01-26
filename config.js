@@ -1,5 +1,6 @@
+// config.js
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://YOUR-PROJECT.supabase.co",
-  SUPABASE_ANON_KEY: "eyJhbGc...", // Supabase anon key
-  OCR_WORKER_URL: "https://learncard-ocr.YOUR-SUBDOMAIN.workers.dev",
+  SUPABASE_URL: "https://ymkodbrbeqiagkbowvde.supabase.co",
+  SUPABASE_ANON_KEY: "PASTE_FULL_ANON_PUBLIC_KEY_HERE",
+  OCR_WORKER_URL: "https://learncard-ocr.asdovasd446.workers.dev",
 };
