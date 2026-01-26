@@ -108,36 +108,39 @@ async function myMemoryTranslate(word) {
   // Use the new Google Apps Script URL defined at the top or passed here
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
 
-  // 1. Fetch Synonyms from Datamuse (Free)
-  let textToTranslate = word;
+  // 1. Translate the MAIN word first (Critical)
+  let mainTranslation = "";
+  try {
+    const qMain = encodeURIComponent(word);
+    const resMain = await fetch(`${GOOGLE_SCRIPT_URL}?q=${qMain}`, { redirect: "follow" });
+    if (resMain.ok) {
+      const data = await resMain.json();
+      mainTranslation = data?.translated;
+      if (typeof mainTranslation === "string") mainTranslation = mainTranslation.trim();
+    }
+  } catch (e) { }
+
+  // Fallback: if main translation blocked, return word itself? No, return empty to show error.
+  if (!mainTranslation) return "";
+
+  // 2. Fetch Synonyms (English)
+  let synonyms = "";
   try {
     const synRes = await fetch(`https://api.datamuse.com/words?rel_syn=${encodeURIComponent(word)}&max=3`);
     if (synRes.ok) {
       const synData = await synRes.json();
-      const synonyms = synData.map(x => x.word).slice(0, 3).join(", ");
-      if (synonyms) {
-        // Format: "main (syn1, syn2)"
-        textToTranslate = `${word} (${synonyms})`;
+      const synList = synData.map(x => x.word).filter(x => x !== word.toLowerCase());
+      if (synList.length > 0) {
+        synonyms = synList.slice(0, 3).join(", ");
       }
     }
-  } catch (e) {
-    // Ignore synonym fails, proceed with just word
-  }
+  } catch (e) { }
 
-  // 2. Translate everything via Google Script
-  const q = encodeURIComponent(textToTranslate);
-  const url = `${GOOGLE_SCRIPT_URL}?q=${q}`;
-
-  try {
-    const res = await fetch(url, { redirect: "follow" });
-    if (!res.ok) return "";
-    const data = await res.json();
-    const t = data?.translated;
-    return typeof t === "string" ? t.trim() : "";
-  } catch (e) {
-    // console.log("Translation error:", e);
-    return "";
+  // 3. Combine: "Tarjima (syn1, syn2)"
+  if (synonyms) {
+    return `${mainTranslation} (${synonyms})`;
   }
+  return mainTranslation;
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
