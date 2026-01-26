@@ -223,8 +223,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function doLogout() {
-    try { await supabase.auth.signOut(); } catch { }
-    // Force clear all storage to ensure nothing remains
+    // Fire and forget - don't wait for server
+    supabase.auth.signOut().catch(() => { });
     localStorage.clear();
     sessionStorage.clear();
     window.location.reload();
@@ -403,11 +403,15 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       setCreateStatus("Chat yaratilmoqda...");
 
-      // Pre-check chat count to avoid DB trigger timeout
-      const { count, error: countError } = await supabase
-        .from("vocab_chats")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", sessionUser.id);
+      // Pre-check chat count to avoid DB trigger timeout (wrapped in timeout)
+      const { count, error: countError } = await withTimeout(
+        supabase
+          .from("vocab_chats")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", sessionUser.id),
+        5000,
+        "Check chat limit"
+      );
 
       if (!countError && count >= 2) {
         throw new Error("Sizda allaqachon 2 ta chat bor. Bittasini o‘chiring.");
