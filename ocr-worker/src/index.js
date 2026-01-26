@@ -108,7 +108,24 @@ async function myMemoryTranslate(word) {
   // Use the new Google Apps Script URL defined at the top or passed here
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
 
-  const q = encodeURIComponent(word);
+  // 1. Fetch Synonyms from Datamuse (Free)
+  let textToTranslate = word;
+  try {
+    const synRes = await fetch(`https://api.datamuse.com/words?rel_syn=${encodeURIComponent(word)}&max=3`);
+    if (synRes.ok) {
+      const synData = await synRes.json();
+      const synonyms = synData.map(x => x.word).slice(0, 3).join(", ");
+      if (synonyms) {
+        // Format: "main (syn1, syn2)"
+        textToTranslate = `${word} (${synonyms})`;
+      }
+    }
+  } catch (e) {
+    // Ignore synonym fails, proceed with just word
+  }
+
+  // 2. Translate everything via Google Script
+  const q = encodeURIComponent(textToTranslate);
   const url = `${GOOGLE_SCRIPT_URL}?q=${q}`;
 
   try {

@@ -328,7 +328,15 @@ document.addEventListener("DOMContentLoaded", () => {
     activeChat = chat;
     setActiveChat(chat);
     // Cards are embedded in the chat object now
-    activeCards = chat.cards || [];
+    let rawCards = chat.cards || [];
+
+    // Auto-Shuffle (Fisher-Yates)
+    activeCards = [...rawCards];
+    for (let i = activeCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [activeCards[i], activeCards[j]] = [activeCards[j], activeCards[i]];
+    }
+
     cardIndex = 0;
     renderCard();
     renderCardsList();
