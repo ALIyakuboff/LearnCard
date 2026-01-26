@@ -540,17 +540,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderCard();
   });
 
-  exportBtn.addEventListener("click", exportActiveChat);
-
-  importBtn.addEventListener("click", () => {
-    importFile.value = "";
-    importFile.click();
-  });
-
-  importFile.addEventListener("change", async () => {
-    setCreateStatus("Import ixtiyoriy (keyin qo‘shamiz).");
-  });
-
   // Init
   (async () => {
     extractedWords = [];
