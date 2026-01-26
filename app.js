@@ -1,13 +1,11 @@
-// app.js — LearnCard (fits your provided index.html exactly)
-// Features:
-// - Supabase auth session check + logout
-// - OCR+Translate via Worker (expects JSON: { text, words, pairs } OR at least { text })
-// - Chips: click to delete words
-// - Manual add word
-// - Create chat (RLS-safe count/head:true) + insert cards
-// - Flashcard flip + prev/next
-// - Load chats + open chat
-// - Export JSON (active chat)
+// app.js — Final no-hang version
+// - Matches your index.html IDs exactly
+// - OCR via Worker
+// - Words chips (click to delete) + manual add
+// - Create chat + insert cards (RLS-safe)
+// - IMPORTANT: chat count check has 20s timeout and is OPTIONAL (won't block flow)
+// - If count fails/timeouts, we still try insert; DB trigger enforces max 2 chats
+// - Logout works
 
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
@@ -64,6 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const importFile = el("importFile");
   const cardsList = el("cardsList");
 
+  // Status helpers
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
 
@@ -96,15 +95,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // State
   let sessionUser = null;
 
-  let extractedWords = [];            // array of EN words
-  let translationMap = new Map();     // en -> uz (from worker pairs if present)
+  let extractedWords = [];            // EN words
+  let translationMap = new Map();     // en -> uz (best-effort)
 
   let chats = [];
   let activeChat = null;
   let activeCards = [];
   let cardIndex = 0;
 
-  // Utils
+  // ---------- Helpers ----------
   function normalizeWord(w) {
     return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
   }
@@ -128,7 +127,9 @@ document.addEventListener("DOMContentLoaded", () => {
   async function withTimeout(promise, ms, label) {
     let t;
     const timeout = new Promise((_, rej) => {
-      t = setTimeout(() => rej(new Error(`${label} timeout (${ms}ms)`)), ms);
+      t = setTimeout(() => {
+        rej(new Error(`${label} timeout (${ms}ms). REST endpoint blok bo‘lishi mumkin (Proxy/Antivirus/Extension/VPN).`));
+      }, ms);
     });
     try {
       return await Promise.race([promise, timeout]);
@@ -137,7 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // JPEG/PNG safe conversion (client-side)
+  // ✅ JPG/PNG safe conversion (reduces OCR provider issues)
   async function toSafeImageFile(originalFile, maxSide = 1600, jpegQuality = 0.85) {
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
@@ -177,15 +178,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Auth UI
+  // ---------- Auth UI ----------
   function setSignedOutUI() {
     sessionUser = null;
 
     userLine.textContent = "Sign in qiling.";
-    if (accountLabel) {
-      accountLabel.classList.add("hidden");
-      accountLabel.textContent = "";
-    }
+    accountLabel.classList.add("hidden");
+    accountLabel.textContent = "";
 
     signInBtn.classList.remove("hidden");
     signUpBtn.classList.remove("hidden");
@@ -215,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sessionUser = user;
 
     userLine.textContent = "Kirgansiz.";
-    accountLabel.textContent = user.email || "signed-in";
+    accountLabel.textContent = user?.email || "signed-in";
     accountLabel.classList.remove("hidden");
 
     signInBtn.classList.add("hidden");
@@ -246,7 +245,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setSignedOutUI();
   }
 
-  // Chips UI
+  // ---------- Words UI ----------
   function renderWords() {
     if (!wordsChips) return;
 
@@ -273,18 +272,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // RLS-safe chat count
-  async function getChatCountRlsSafe() {
-    const resp = await withTimeout(
-      supabase.from("vocab_chats").select("*", { count: "exact", head: true }),
-      8000,
-      "chat count"
-    );
-    if (resp.error) throw resp.error;
-    return resp.count || 0;
-  }
-
-  // OCR call (expects worker to return {text, words, pairs} OR at least {text})
+  // ---------- OCR (Worker: expects {text, words, pairs}) ----------
   async function runServerOcr(file) {
     if (!sessionUser) return setOcrStatus("Avval Sign in qiling.");
     if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
@@ -302,7 +290,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const fd = new FormData();
       fd.append("image", fixedFile, fixedFile.name);
 
-      // 2 tries for flaky provider (E301)
       let json = {};
       let lastErr = "";
 
@@ -336,7 +323,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 100);
 
-      // translation map from pairs if present
       translationMap = new Map();
       const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
       for (const p of pairs) {
@@ -357,7 +343,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Chats load/open
+  // ---------- Supabase (Chats/Cards) ----------
   async function loadChats() {
     if (!sessionUser) return;
 
@@ -448,6 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
       cardsList.textContent = "Bu chatda card yo‘q.";
       return;
     }
+
     cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
   }
 
@@ -476,7 +463,7 @@ document.addEventListener("DOMContentLoaded", () => {
     exampleText.textContent = "";
   }
 
-  // Create chat + cards
+  // ✅ Final: no-hang create chat
   async function createChatFromWords() {
     if (!sessionUser) return setCreateStatus("Avval Sign in qiling.");
     if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval Scan qiling.");
@@ -484,9 +471,24 @@ document.addEventListener("DOMContentLoaded", () => {
     createChatBtn.disabled = true;
 
     try {
-      setCreateStatus("Chat limiti tekshirilmoqda...");
-      const cnt = await getChatCountRlsSafe();
-      if (cnt >= 2) {
+      setCreateStatus("Chat yaratilmoqda... (limit check optional)");
+
+      // OPTIONAL: try count (20s) but NEVER block whole flow
+      let cnt = null;
+      try {
+        const countResp = await withTimeout(
+          supabase.from("vocab_chats").select("*", { count: "exact", head: true }),
+          20000,
+          "chat count"
+        );
+        if (countResp.error) throw countResp.error;
+        cnt = countResp.count || 0;
+      } catch (e) {
+        // Do not block. Trigger will enforce limit.
+        cnt = null;
+      }
+
+      if (cnt !== null && cnt >= 2) {
         setCreateStatus("Limit: 2 ta chat. Avval bittasini o‘chiring.");
         return;
       }
@@ -494,20 +496,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      setCreateStatus("Chat yaratilmoqda...");
+      setCreateStatus("Chat insert...");
       const chatInsert = await withTimeout(
         supabase.from("vocab_chats")
           .insert({ user_id: sessionUser.id, title })
           .select("id, title, created_at")
           .single(),
-        8000,
+        15000,
         "chat insert"
       );
 
       if (chatInsert.error) throw chatInsert.error;
       const chatRow = chatInsert.data;
 
-      setCreateStatus("Cardlar saqlanyapti...");
+      setCreateStatus("Cards insert...");
       const cardRows = words.map((en) => ({
         user_id: sessionUser.id,
         chat_id: chatRow.id,
@@ -517,7 +519,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const cardsInsert = await withTimeout(
         supabase.from("vocab_cards").insert(cardRows),
-        12000,
+        30000,
         "cards insert"
       );
 
@@ -539,7 +541,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Export active chat
+  // Export
   function exportActiveChat() {
     if (!activeChat) return setCreateStatus("Export uchun chat tanlang.");
 
@@ -560,10 +562,7 @@ document.addEventListener("DOMContentLoaded", () => {
     URL.revokeObjectURL(url);
   }
 
-  /* =========================
-     Event wiring (matches your HTML)
-  ========================= */
-
+  // ---------- Events ----------
   signOutBtn.addEventListener("click", doLogout);
 
   runOcrBtn.addEventListener("click", async () => {
@@ -626,10 +625,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setCreateStatus("Import ixtiyoriy (keyin qo‘shamiz).");
   });
 
-  /* =========================
-     Init
-  ========================= */
-
+  // Init
   (async () => {
     extractedWords = [];
     translationMap = new Map();
