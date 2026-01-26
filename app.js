@@ -398,9 +398,19 @@ document.addEventListener("DOMContentLoaded", () => {
     createChatBtn.disabled = true;
 
     try {
-      // IMPORTANT: don't call chat count first (because it can hang on some networks).
-      // We rely on DB trigger max-2-chats. If trigger blocks, we show the error.
       setCreateStatus("Chat yaratilmoqda...");
+
+      // Pre-check chat count to avoid DB trigger timeout
+      const { count, error: countError } = await supabase
+        .from("vocab_chats")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", sessionUser.id);
+
+      if (!countError && count >= 2) {
+        throw new Error("Sizda allaqachon 2 ta chat bor. Bittasini o‘chiring.");
+      }
+
+      // We rely on DB trigger max-2-chats as a fallback, but the client check is faster.
 
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
