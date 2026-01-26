@@ -403,18 +403,25 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       setCreateStatus("Chat yaratilmoqda...");
 
-      // Pre-check chat count to avoid DB trigger timeout (wrapped in timeout)
-      const { count, error: countError } = await withTimeout(
-        supabase
-          .from("vocab_chats")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", sessionUser.id),
-        5000,
-        "Check chat limit"
-      );
-
-      if (!countError && count >= 2) {
-        throw new Error("Sizda allaqachon 2 ta chat bor. Bittasini o‘chiring.");
+      // Pre-check chat count (soft check)
+      // If this times out, we just proceed and let the DB trigger handle it.
+      try {
+        const { count, error: countError } = await withTimeout(
+          supabase
+            .from("vocab_chats")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", sessionUser.id),
+          4000,
+          "Check chat limit"
+        );
+        if (!countError && count >= 2) {
+          throw new Error("Sizda allaqachon 2 ta chat bor. Bittasini o‘chiring.");
+        }
+      } catch (e) {
+        // If it's the limit error, re-throw it.
+        if (e.message.includes("2 ta chat")) throw e;
+        // Otherwise (timeout/network), ignore and proceed to avoid blocking the user.
+        console.warn("Chat limit check skipped:", e);
       }
 
       // We rely on DB trigger max-2-chats as a fallback, but the client check is faster.
