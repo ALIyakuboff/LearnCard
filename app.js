@@ -46,12 +46,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
 
-  // ... (existing code)
-
-
-  const exportBtn = el("exportBtn");
-  const importBtn = el("importBtn");
-  const importFile = el("importFile");
   const cardsList = el("cardsList");
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
@@ -200,16 +194,22 @@ document.addEventListener("DOMContentLoaded", () => {
   function setSignedInUI(user) {
     sessionUser = user;
 
-    if (userLine) userLine.textContent = "- Kirgansiz";
+    if (userLine) userLine.textContent = "- Kirish";
+
     if (accountLabel) {
       accountLabel.textContent = user.email || "user";
       accountLabel.classList.remove("hidden");
-      accountLabel.title = "Sizning akkauntingiz";
+      accountLabel.style.display = "inline-block";
     }
 
-    if (signInBtn) signInBtn.classList.add("hidden");
-    if (signUpBtn) signUpBtn.classList.add("hidden");
-    if (signOutBtn) signOutBtn.classList.add("hidden");
+    if (signInBtn) {
+      signInBtn.classList.add("hidden");
+      signInBtn.style.display = "none";
+    }
+    if (signUpBtn) {
+      signUpBtn.classList.add("hidden");
+      signUpBtn.style.display = "none";
+    }
 
     runOcrBtn.disabled = false;
     createChatBtn.disabled = false;
