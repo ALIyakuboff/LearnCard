@@ -13,8 +13,10 @@
     <div class="brand">
       <div class="logo">LC</div>
       <div class="brand-text">
-        <h1>LearnCard <span class="yokubov-brand">Yokubov</span></h1>
-        <p class="muted" id="userLine">Sign in qiling.</p>
+        <h1>
+          LearnCard <span class="yokubov-brand">Yokubov</span>
+          <span id="userLine" class="user-line-inline">Sign in qiling.</span>
+        </h1>
       </div>
     </div>
 
@@ -31,9 +33,9 @@
 
   <main class="container layout">
     <section class="panel">
-      <h2>Rasm yuklash (OCR)</h2>
+      <h2>Rasm yuklash</h2>
       <div class="muted small">
-        JPG/PNG ishlaydi. Rasm saqlanmaydi. OCR+tarjima Worker’da bajariladi.
+
       </div>
 
       <div class="form" style="margin-top:10px;">
@@ -43,7 +45,7 @@
         </label>
 
         <div class="row">
-          <button id="runOcrBtn" class="btn btn-primary" type="button">Scan (OCR)</button>
+          <button id="runOcrBtn" class="btn btn-primary" type="button">Scan</button>
           <button id="clearScanBtn" class="btn btn-ghost" type="button">Clear</button>
         </div>
 
@@ -66,7 +68,7 @@
         <div class="row">
           <label class="label" style="flex:1;">
             So‘z qo‘shish (manual)
-            <input id="manualWord" class="input" type="text" placeholder="e.g., allocate" />
+            <input id="manualWord" class="input" type="text" placeholder="" />
           </label>
           <button id="addManualWordBtn" class="btn btn-secondary" type="button">Add</button>
         </div>
@@ -75,7 +77,7 @@
 
         <label class="label">
           Chat nomi (ixtiyoriy)
-          <input id="chatTitle" class="input" type="text" placeholder="e.g., Reading Unit 3" />
+          <input id="chatTitle" class="input" type="text" placeholder="For example, Reading Unit 3" />
         </label>
 
         <button id="createChatBtn" class="btn btn-primary" type="button">Translate & Create Chat</button>
@@ -83,7 +85,7 @@
 
         <div class="divider"></div>
 
-        <h2>Chatlar (max 2)</h2>
+        <h2>Chatlar</h2>
         <div id="chatList" class="chat-list muted">Sign in qiling — chatlar shu yerda chiqadi.</div>
       </div>
     </section>
@@ -94,7 +96,7 @@
         <div class="pill" id="activeChatMeta">—</div>
       </div>
 
-      <div class="muted small">Card ustiga bosing: flip.</div>
+      <div class="muted small">Card ustiga bosing:</div>
 
       <div class="card clickable" id="card" role="button" tabindex="0" aria-label="Flip card">
         <div class="card-face" id="cardFront">
@@ -122,9 +124,7 @@
     </section>
   </main>
 
-  <footer class="container footer muted">
-    <p>OCR+Translate server-side. Har doim bepul.</p>
-  </footer>
+
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
