@@ -13,70 +13,64 @@
         <div class="logo">LC</div>
         <div class="brand-text">
           <h1>LearnCard</h1>
-          <p class="muted">Kirish / Ro'yxatdan o'tish</p>
+          <p class="muted">Kirish / Ro‘yxatdan o‘tish</p>
         </div>
       </div>
 
       <div class="header-actions">
-        <a class="btn btn-ghost" href="./index.html">⬅️ Back</a>
+        <a class="btn btn-ghost" href="./index.html">Back</a>
       </div>
     </header>
 
     <main class="container auth-wrap">
       <div class="auth-tabs">
         <button id="tabSignUp" class="btn auth-tab" type="button">Sign up</button>
-        <button id="tabSignIn" class="btn auth-tab active" type="button">Sign in</button>
+        <button id="tabSignIn" class="btn auth-tab" type="button">Sign in</button>
       </div>
 
       <section class="panel">
-        <form id="signUpForm" class="form hidden">
-          <h2 style="margin-bottom: 6px;">📝 Ro'yxatdan o'tish</h2>
-          <div class="muted small" style="margin-bottom: 10px;">
-            Email va parol kiriting. Tasdiqlash kerak emas, darhol foydalanishingiz mumkin.
-          </div>
-          
+        <form id="signUpForm" class="form">
+          <h2 style="margin-bottom: 6px;">Sign up</h2>
+
           <label class="label">
             Email
-            <input id="signUpEmail" class="input" type="email" placeholder="example@gmail.com" required />
+            <input id="signUpEmail" class="input" type="email" placeholder="you@example.com" required />
           </label>
-          
+
           <label class="label">
-            Password (kamida 6 ta belgi)
-            <input id="signUpPassword" class="input" type="password" placeholder="••••••" required minlength="6" />
+            Password
+            <input id="signUpPassword" class="input" type="password" placeholder="••••••••" required />
           </label>
-          
-          <button class="btn btn-primary" type="submit">✨ Create account</button>
+
+          <button class="btn btn-primary" type="submit">Create account</button>
           <p id="signUpStatus" class="status muted"></p>
         </form>
 
-        <form id="signInForm" class="form">
-          <h2 style="margin-bottom: 6px;">🔐 Kirish</h2>
-          <div class="muted small" style="margin-bottom: 10px;">
-            Email va parolingizni kiriting.
-          </div>
-          
+        <form id="signInForm" class="form hidden">
+          <h2 style="margin-bottom: 6px;">Sign in</h2>
+
           <label class="label">
             Email
-            <input id="signInEmail" class="input" type="email" placeholder="example@gmail.com" required />
+            <input id="signInEmail" class="input" type="email" placeholder="you@example.com" required />
           </label>
-          
+
           <label class="label">
             Password
-            <input id="signInPassword" class="input" type="password" placeholder="••••••" required />
+            <input id="signInPassword" class="input" type="password" placeholder="••••••••" required />
           </label>
-          
-          <button class="btn btn-primary" type="submit">🚀 Sign in</button>
+
+          <button class="btn btn-primary" type="submit">Sign in</button>
           <p id="signInStatus" class="status muted"></p>
         </form>
       </section>
     </main>
 
     <footer class="container footer muted">
-      <p>Sign in bo'lgach, avtomatik index.html'ga qaytasiz.</p>
+      <p>Sign in bo‘lgach, index.html’ga qaytasiz.</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./config.js"></script>
-    <script src="./auth.js"></script>
+    <script src="./config.js?v=20260126-final"></script>
+    <script src="./auth.js?v=20260126-final"></script>
   </body>
 </html>

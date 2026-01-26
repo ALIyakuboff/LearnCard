@@ -1,6 +1,10 @@
+// auth.js
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
-  const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+  const SUPABASE_URL = cfg.SUPABASE_URL || "";
+  const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -13,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const tabSignUp = el("tabSignUp");
   const tabSignIn = el("tabSignIn");
+
   const signUpForm = el("signUpForm");
   const signInForm = el("signInForm");
 
@@ -38,16 +43,34 @@ document.addEventListener("DOMContentLoaded", () => {
   tabSignUp.addEventListener("click", () => setMode("up"));
   tabSignIn.addEventListener("click", () => setMode("in"));
 
-  // If already signed in, go home
+  async function healthCheck() {
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
+        headers: { apikey: SUPABASE_ANON_KEY },
+      });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
   (async () => {
+    // if already signed in -> home
     const { data } = await supabase.auth.getSession();
     if (data?.session?.user) window.location.href = "./index.html";
   })();
 
   signUpForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    signUpStatus.textContent = "Creating...";
 
+    signUpStatus.textContent = "Checking network...";
+    const ok = await healthCheck();
+    if (!ok) {
+      signUpStatus.textContent = "❌ Network muammo: Supabase’ga ulanib bo‘lmadi (Failed to fetch).";
+      return;
+    }
+
+    signUpStatus.textContent = "Creating account...";
     const email = signUpEmail.value.trim();
     const password = signUpPassword.value.trim();
 
@@ -57,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Some projects require email confirm; session may be null
+    // In some configs, email confirmation is required, session may be null.
     const { data } = await supabase.auth.getSession();
     if (data?.session?.user) {
       window.location.href = "./index.html";
@@ -72,20 +95,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
   signInForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    signInStatus.textContent = "Signing in...";
 
+    signInStatus.textContent = "Checking network...";
+    const ok = await healthCheck();
+    if (!ok) {
+      signInStatus.textContent = "❌ Network muammo: Supabase’ga ulanib bo‘lmadi (Failed to fetch).";
+      return;
+    }
+
+    signInStatus.textContent = "Signing in...";
     const email = signInEmail.value.trim();
     const password = signInPassword.value.trim();
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       signInStatus.textContent = `❌ ${error.message}`;
       return;
     }
 
-    // Hard verify session
-    const { data: s } = await supabase.auth.getSession();
-    if (!s?.session?.user) {
+    // Hard verify session saved
+    const { data } = await supabase.auth.getSession();
+    if (!data?.session?.user) {
       signInStatus.textContent = "❌ Signed in, lekin session saqlanmadi (storage blok bo‘lishi mumkin).";
       return;
     }
