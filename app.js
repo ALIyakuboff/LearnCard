@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = user?.email || "User";
     console.log("LearnCard: UI State -> USER (" + email + ")");
     sessionUser = user;
-    if (userLine) userLine.textContent = "- Kirilgan";
+    if (userLine) userLine.textContent = "Kirgansiz.";
 
     if (headerActions) {
       headerActions.setAttribute("data-auth", "signed-in");
