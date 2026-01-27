@@ -466,17 +466,26 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      // Call Google Apps Script for translation
+      // Call Google Apps Script for translation (GET method with q parameter)
       let translations = {};
       if (TRANSLATE_URL) {
         try {
-          const response = await fetch(TRANSLATE_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ words: words })
-          });
-          if (response.ok) {
-            translations = await response.json();
+          for (let i = 0; i < words.length; i++) {
+            const word = words[i];
+            setCreateStatus(`Tarjima qilinmoqda... (${i + 1}/${words.length})`);
+
+            const url = `${TRANSLATE_URL}?q=${encodeURIComponent(word)}`;
+            const response = await fetch(url);
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.translated) {
+                translations[word] = data.translated;
+              }
+            }
+
+            // Small delay to avoid overwhelming the API
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
         } catch (err) {
           console.error("Translation error:", err);
