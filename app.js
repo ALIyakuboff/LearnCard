@@ -471,45 +471,47 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      // Call Google Apps Script for translation (GET method with q parameter)
+      // Unified more reliable URL from worker logic
+      const TRANS_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+
       let translations = {};
-      if (TRANSLATE_URL) {
+      const batchSize = 25;
+
+      for (let i = 0; i < words.length; i += batchSize) {
+        const chunk = words.slice(i, i + batchSize);
+        setCreateStatus(`Tarjima qilinmoqda... (${i + 1}-${Math.min(i + batchSize, words.length)}/${words.length})`);
+
+        // Batch format: "1. word1\n2. word2..." to force line separation
+        const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
+        const url = `${TRANS_URL}?q=${encodeURIComponent(textToTranslate)}`;
+
         try {
-          for (let i = 0; i < words.length; i++) {
-            const word = words[i];
-            setCreateStatus(`Tarjima qilinmoqda... (${i + 1}/${words.length})`);
+          const res = await fetch(url, { redirect: "follow" });
+          if (res.ok) {
+            const data = await res.json();
+            const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
 
-            const url = `${TRANSLATE_URL}?q=${encodeURIComponent(word)}`;
-            console.log("TRANSLATING:", word);
-
-            try {
-              const response = await fetch(url, { method: "GET" });
-              if (response.ok) {
-                const data = await response.json();
-                if (data.translated) {
-                  translations[word] = data.translated;
-                }
-              } else {
-                console.warn("Translation failed for:", word, response.status);
+            // Robust parsing logic same as worker
+            const lines = translatedBlock.split("\n");
+            let foundIdx = 0;
+            for (const line of lines) {
+              const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
+              if (clean && foundIdx < chunk.length) {
+                translations[chunk[foundIdx]] = clean;
+                foundIdx++;
               }
-            } catch (fetchErr) {
-              console.error("Fetch block (possibly CORS):", fetchErr);
-              // Don't stop the whole process, just log and continue
             }
-
-            await new Promise(resolve => setTimeout(resolve, 50));
           }
-        } catch (err) {
-          console.error("Loop error:", err);
-          setCreateStatus("❌ Tarjima jarayonida xatolik yuz berdi.");
+        } catch (fetchErr) {
+          console.error("Batch fetch error:", fetchErr);
+        }
+
+        if (i + batchSize < words.length) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // Small pause between batches
         }
       }
 
       setCreateStatus("Chat yaratilmoqda...");
-      const finalCount = Object.keys(translations).length;
-      if (finalCount === 0 && words.length > 0) {
-        console.warn("No translations received from Google API.");
-      }
 
       // Prepare local object with translations
       const newChat = {
@@ -525,7 +527,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Save to USER scoped local storage
       const list = getLocalChats();
-      // LIMIT REMOVED per user request
       list.push(newChat);
       saveLocalChats(list);
 
@@ -536,7 +537,6 @@ document.addEventListener("DOMContentLoaded", () => {
       chatTitle.value = "";
 
       await loadChats();
-      // AUTO-OPEN: Immediately display the newly created chat
       await openChat(newChat);
     } catch (e) {
       setCreateStatus(`Xato: ${e.message || e}`);
