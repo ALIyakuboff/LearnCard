@@ -168,60 +168,78 @@ document.addEventListener("DOMContentLoaded", () => {
   const headerActions = document.querySelector(".header-actions");
 
   function setSignedOutUI() {
-    console.log("LearnCard: UI Mode -> GUEST");
+    if (!sessionUser && document.documentElement.getAttribute("data-auth") === "signed-out") return;
+    console.log("GOD_MODE: Force GUEST State");
     sessionUser = null;
     localStorage.removeItem("LC_USER_EMAIL");
-
-    document.body.setAttribute("data-auth", "signed-out");
+    document.documentElement.setAttribute("data-auth", "signed-out");
     if (userLine) userLine.textContent = "- Sign in qiling";
-    if (headerActions) headerActions.setAttribute("data-auth", "signed-out");
+
+    if (headerActions) {
+      headerActions.innerHTML = `
+        <div id="guestView" class="account-box">
+          <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
+        </div>
+        <div id="userView" class="account-box" style="display:none;">
+          <div id="accountLabel" class="account-label"></div>
+        </div>
+      `;
+    }
 
     if (imageInput) imageInput.disabled = true;
     if (runOcrBtn) runOcrBtn.disabled = true;
     if (createChatBtn) createChatBtn.disabled = true;
 
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
-    setActiveChat(null);
-    loadChats();
-    extractedWords = []; translationMap = new Map(); renderWords();
+    setActiveChat(null); loadChats();
   }
 
   function setSignedInUI(user) {
-    // ULTRABOOST: Priority on LocalStorage backup for instant feel
     const email = localStorage.getItem("LC_USER_EMAIL") || user?.email || user?.user_metadata?.email || "Kirilgan";
-    console.log("LearnCard IRONCLAD_SYNC: " + email);
 
-    sessionUser = user;
-    document.body.setAttribute("data-auth", "signed-in");
-    if (userLine) userLine.textContent = "Kirgansiz.";
-
-    if (headerActions) {
-      headerActions.setAttribute("data-auth", "signed-in");
-      if (accountLabel) accountLabel.textContent = email;
+    if (!sessionUser || sessionUser.id !== user.id) {
+      console.log("GOD_MODE: Force USER State -> " + email);
     }
 
+    sessionUser = user;
+    document.documentElement.setAttribute("data-auth", "signed-in");
+    if (userLine) userLine.textContent = "Kirgansiz.";
+
+    const injectUserUI = () => {
+      if (!headerActions) return;
+      if (headerActions.querySelector("#signInBtn") || !headerActions.querySelector("#accountLabel")) {
+        headerActions.innerHTML = `
+          <div id="userView" class="account-box" style="display:flex !important;">
+            <div id="accountLabel" class="account-label" style="display:block !important; color:#fff !important; opacity:1 !important;">${email}</div>
+          </div>
+        `;
+      }
+    };
+
+    injectUserUI();
     if (imageInput) imageInput.disabled = false;
     if (runOcrBtn) runOcrBtn.disabled = false;
     if (createChatBtn) createChatBtn.disabled = false;
-
-    // WATCHDOG: Beat race conditions and enforce restrictions
-    let count = 0;
-    const itv = setInterval(() => {
-      const isLogged = !!document.body.getAttribute("data-auth")?.includes("signed-in");
-      if (imageInput) imageInput.disabled = !isLogged;
-      if (runOcrBtn) runOcrBtn.disabled = !isLogged;
-      if (createChatBtn) createChatBtn.disabled = !isLogged;
-
-      if (accountLabel) accountLabel.textContent = email;
-      if (++count > 15) clearInterval(itv);
-    }, 500);
   }
 
+  async function masterSync() {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const user = data?.session?.user || null;
+      if (user) {
+        setSignedInUI(user);
+      } else {
+        setSignedOutUI();
+      }
+    } catch (e) {
+      console.error("GOD_MODE_ERR:", e);
+    }
+  }
+
+  setInterval(masterSync, 2000);
+
   async function refreshSession() {
-    const { data } = await supabase.auth.getSession();
-    const user = data?.session?.user || null;
-    if (!user) return setSignedOutUI();
-    setSignedInUI(user);
+    await masterSync();
   }
 
   async function doLogout() {
