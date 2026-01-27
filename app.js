@@ -536,6 +536,8 @@ document.addEventListener("DOMContentLoaded", () => {
       chatTitle.value = "";
 
       await loadChats();
+      // AUTO-OPEN: Immediately display the newly created chat
+      await openChat(newChat);
     } catch (e) {
       setCreateStatus(`Xato: ${e.message || e}`);
     } finally {
