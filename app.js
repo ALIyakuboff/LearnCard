@@ -169,20 +169,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const headerActions = document.querySelector(".header-actions");
 
   function setSignedOutUI() {
-    if (!sessionUser && document.documentElement.getAttribute("data-auth") === "signed-out") return;
+    const actions = document.querySelector(".header-actions");
+    if (!sessionUser && document.documentElement.getAttribute("data-auth") === "signed-out" && actions?.querySelector("#signInBtn")) return;
+
     console.log("GOD_MODE: Force GUEST State");
     sessionUser = null;
     localStorage.removeItem("LC_USER_EMAIL");
     document.documentElement.setAttribute("data-auth", "signed-out");
+    document.body.setAttribute("data-auth", "signed-out");
     if (userLine) userLine.textContent = "- Sign in qiling";
 
-    if (headerActions) {
-      headerActions.innerHTML = `
+    if (actions) {
+      actions.setAttribute("data-auth", "signed-out");
+      actions.innerHTML = `
         <div id="guestView" class="account-box">
           <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
-        </div>
-        <div id="userView" class="account-box" style="display:none;">
-          <div id="accountLabel" class="account-label"></div>
         </div>
       `;
     }
@@ -190,7 +191,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (imageInput) imageInput.disabled = true;
     if (runOcrBtn) runOcrBtn.disabled = true;
     if (createChatBtn) createChatBtn.disabled = true;
-
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null); loadChats();
   }
@@ -204,20 +204,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     sessionUser = user;
     document.documentElement.setAttribute("data-auth", "signed-in");
+    document.body.setAttribute("data-auth", "signed-in");
     if (userLine) userLine.textContent = "Kirgansiz.";
 
-    const injectUserUI = () => {
-      if (!headerActions) return;
-      if (headerActions.querySelector("#signInBtn") || !headerActions.querySelector("#accountLabel")) {
-        headerActions.innerHTML = `
+    const forceUI = () => {
+      const actions = document.querySelector(".header-actions");
+      if (!actions) return;
+      actions.setAttribute("data-auth", "signed-in");
+
+      // If guest UI still exists or email label missing, RE-INJECT
+      if (actions.querySelector("#signInBtn") || !actions.querySelector("#accountLabel")) {
+        actions.innerHTML = `
           <div id="userView" class="account-box" style="display:flex !important;">
-            <div id="accountLabel" class="account-label" style="display:block !important; color:#fff !important; opacity:1 !important;">${email}</div>
+            <div id="accountLabel" class="account-label" style="display:block !important; color:#fff !important; opacity:1 !important; visibility:visible !important;">${email}</div>
           </div>
         `;
       }
     };
 
-    injectUserUI();
+    forceUI();
     if (imageInput) imageInput.disabled = false;
     if (runOcrBtn) runOcrBtn.disabled = false;
     if (createChatBtn) createChatBtn.disabled = false;
@@ -227,17 +232,17 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const { data } = await supabase.auth.getSession();
       const user = data?.session?.user || null;
+      if (user) setSignedInUI(user); else setSignedOutUI();
+
+      // Secondary check: Ensure buttons are gone if logged in
       if (user) {
-        setSignedInUI(user);
-      } else {
-        setSignedOutUI();
+        const btn = document.getElementById("signInBtn");
+        if (btn) btn.parentElement.style.display = "none";
       }
-    } catch (e) {
-      console.error("GOD_MODE_ERR:", e);
-    }
+    } catch (e) { }
   }
 
-  setInterval(masterSync, 2000);
+  setInterval(masterSync, 1500);
 
   async function refreshSession() {
     await masterSync();
@@ -475,24 +480,36 @@ document.addEventListener("DOMContentLoaded", () => {
             setCreateStatus(`Tarjima qilinmoqda... (${i + 1}/${words.length})`);
 
             const url = `${TRANSLATE_URL}?q=${encodeURIComponent(word)}`;
-            const response = await fetch(url);
+            console.log("TRANSLATING:", word);
 
-            if (response.ok) {
-              const data = await response.json();
-              if (data.translated) {
-                translations[word] = data.translated;
+            try {
+              const response = await fetch(url, { method: "GET" });
+              if (response.ok) {
+                const data = await response.json();
+                if (data.translated) {
+                  translations[word] = data.translated;
+                }
+              } else {
+                console.warn("Translation failed for:", word, response.status);
               }
+            } catch (fetchErr) {
+              console.error("Fetch block (possibly CORS):", fetchErr);
+              // Don't stop the whole process, just log and continue
             }
 
-            // Small delay to avoid overwhelming the API
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 50));
           }
         } catch (err) {
-          console.error("Translation error:", err);
+          console.error("Loop error:", err);
+          setCreateStatus("❌ Tarjima jarayonida xatolik yuz berdi.");
         }
       }
 
       setCreateStatus("Chat yaratilmoqda...");
+      const finalCount = Object.keys(translations).length;
+      if (finalCount === 0 && words.length > 0) {
+        console.warn("No translations received from Google API.");
+      }
 
       // Prepare local object with translations
       const newChat = {
