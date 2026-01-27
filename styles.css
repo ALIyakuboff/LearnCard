@@ -103,6 +103,18 @@ body[data-auth="signed-in"] #userView {
   display: flex !important;
 }
 
+/* VISUAL RESTRICTION: Dim scan panel when signed out */
+body[data-auth="signed-out"] .layout .panel:first-of-type {
+  opacity: 0.6;
+  pointer-events: none;
+  filter: grayscale(0.5);
+  cursor: not-allowed;
+}
+
+body[data-auth="signed-out"] .layout .panel:first-of-type * {
+  cursor: not-allowed;
+}
+
 /* DEPRECATED: Keeping for legacy actions if any */
 .header-actions[data-auth="signed-in"] #guestView {
   display: none !important;

@@ -176,8 +176,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (userLine) userLine.textContent = "- Sign in qiling";
     if (headerActions) headerActions.setAttribute("data-auth", "signed-out");
 
-    runOcrBtn.disabled = true;
-    createChatBtn.disabled = true;
+    if (imageInput) imageInput.disabled = true;
+    if (runOcrBtn) runOcrBtn.disabled = true;
+    if (createChatBtn) createChatBtn.disabled = true;
+
     chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
     setActiveChat(null);
     loadChats();
@@ -198,15 +200,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (accountLabel) accountLabel.textContent = email;
     }
 
-    runOcrBtn.disabled = false;
-    createChatBtn.disabled = false;
+    if (imageInput) imageInput.disabled = false;
+    if (runOcrBtn) runOcrBtn.disabled = false;
+    if (createChatBtn) createChatBtn.disabled = false;
 
-    // WATCHDOG: Beat race conditions by syncing UI state multiple times
+    // WATCHDOG: Beat race conditions and enforce restrictions
     let count = 0;
     const itv = setInterval(() => {
-      document.body.setAttribute("data-auth", "signed-in");
+      const isLogged = !!document.body.getAttribute("data-auth")?.includes("signed-in");
+      if (imageInput) imageInput.disabled = !isLogged;
+      if (runOcrBtn) runOcrBtn.disabled = !isLogged;
+      if (createChatBtn) createChatBtn.disabled = !isLogged;
+
       if (accountLabel) accountLabel.textContent = email;
-      if (++count > 10) clearInterval(itv);
+      if (++count > 15) clearInterval(itv);
     }, 500);
   }
 
