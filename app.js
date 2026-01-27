@@ -588,14 +588,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // Events
   if (signOutBtn) signOutBtn.addEventListener("click", doLogout);
 
-  runOcrBtn.addEventListener("click", async () => {
-    const file = imageInput.files?.[0];
+  if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
+    const file = imageInput?.files?.[0];
     if (!file) return setOcrStatus("Avval rasm tanlang.");
     await runServerOcr(file);
   });
 
-  clearScanBtn.addEventListener("click", () => {
-    imageInput.value = "";
+  if (clearScanBtn) clearScanBtn.addEventListener("click", () => {
+    if (imageInput) imageInput.value = "";
     extractedWords = [];
     translationMap = new Map();
     renderWords();
@@ -604,22 +604,22 @@ document.addEventListener("DOMContentLoaded", () => {
     ocrUxHide();
   });
 
-  addManualWordBtn.addEventListener("click", () => {
-    const w = normalizeWord(manualWord.value);
+  if (addManualWordBtn) addManualWordBtn.addEventListener("click", () => {
+    const w = normalizeWord(manualWord?.value);
     if (!w) return;
     if (!extractedWords.includes(w)) extractedWords.push(w);
-    manualWord.value = "";
+    if (manualWord) manualWord.value = "";
     renderWords();
   });
 
-  manualWord.addEventListener("keydown", (e) => {
+  if (manualWord) manualWord.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      addManualWordBtn.click();
+      addManualWordBtn?.click();
     }
   });
 
-  createChatBtn.addEventListener("click", createChatFromWords);
+  if (createChatBtn) createChatBtn.addEventListener("click", createChatFromWords);
 
   const handleSpeak = (e) => {
     e.stopPropagation(); // Don't flip card
@@ -629,17 +629,17 @@ document.addEventListener("DOMContentLoaded", () => {
   if (speakBtn) speakBtn.addEventListener("click", handleSpeak);
   if (speakBtnBack) speakBtnBack.addEventListener("click", handleSpeak);
 
-  card.addEventListener("click", () => {
-    if (cardBack.classList.contains("hidden")) showBack(); else showFront();
+  if (card) card.addEventListener("click", () => {
+    if (cardBack && cardBack.classList.contains("hidden")) showBack(); else showFront();
   });
 
-  prevBtn.addEventListener("click", () => {
+  if (prevBtn) prevBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length;
     renderCard();
   });
 
-  nextBtn.addEventListener("click", () => {
+  if (nextBtn) nextBtn.addEventListener("click", () => {
     if (!activeCards.length) return;
     cardIndex = (cardIndex + 1) % activeCards.length;
     renderCard();
