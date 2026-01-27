@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUPABASE_URL = cfg.SUPABASE_URL || "";
   const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
   const OCR_WORKER_URL = cfg.OCR_WORKER_URL || "";
+  const TRANSLATE_URL = cfg.TRANSLATE_URL || "";
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
@@ -460,12 +461,31 @@ document.addEventListener("DOMContentLoaded", () => {
     createChatBtn.disabled = true;
 
     try {
-      setCreateStatus("Chat yaratilmoqda...");
+      setCreateStatus("Tarjima qilinmoqda...");
 
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      // Prepare local object
+      // Call Google Apps Script for translation
+      let translations = {};
+      if (TRANSLATE_URL) {
+        try {
+          const response = await fetch(TRANSLATE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ words: words })
+          });
+          if (response.ok) {
+            translations = await response.json();
+          }
+        } catch (err) {
+          console.error("Translation error:", err);
+        }
+      }
+
+      setCreateStatus("Chat yaratilmoqda...");
+
+      // Prepare local object with translations
       const newChat = {
         id: "loc_" + Date.now(),
         title,
@@ -473,7 +493,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cards: words.map((en) => ({
           id: "c_" + Math.random().toString(36).slice(2),
           en,
-          uz: translationMap.get(en) || "",
+          uz: translations[en] || translationMap.get(en) || "",
         }))
       };
 
