@@ -90,16 +90,16 @@ h2 {
   gap: 8px;
 }
 
-/* GLOBAL AUTH STATE CONTROLS */
-body[data-auth="signed-in"] #guestView {
+/* GLOBAL AUTH STATE CONTROLS (ROOT LEVEL) */
+html[data-auth="signed-in"] #guestView {
   display: none !important;
 }
 
-body[data-auth="signed-out"] #userView {
+html[data-auth="signed-out"] #userView {
   display: none !important;
 }
 
-body[data-auth="signed-in"] #userView {
+html[data-auth="signed-in"] #userView {
   display: flex !important;
 }
 
