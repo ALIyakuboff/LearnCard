@@ -21,8 +21,23 @@ export default {
     }
 
     const ct = request.headers.get("Content-Type") || "";
+
+    // NEW: Handle JSON translation requests (Proxy mode)
+    if (ct.includes("application/json")) {
+      const body = await request.json().catch(() => ({}));
+      if (body.action === "translate" && body.text) {
+        try {
+          const translated = await translateWord(body.text);
+          return json({ translated }, 200, cors);
+        } catch (e) {
+          return json({ error: "Translation proxy failed", details: String(e) }, 500, cors);
+        }
+      }
+      return json({ error: "Invalid JSON action" }, 400, cors);
+    }
+
     if (!ct.includes("multipart/form-data")) {
-      return json({ error: "Expected multipart/form-data" }, 400, cors);
+      return json({ error: "Expected multipart/form-data or application/json" }, 400, cors);
     }
 
     const form = await request.formData();

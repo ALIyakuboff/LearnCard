@@ -471,43 +471,49 @@ document.addEventListener("DOMContentLoaded", () => {
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
 
-      // Unified more reliable URL from worker logic
-      const TRANS_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
-
       let translations = {};
       const batchSize = 25;
 
-      for (let i = 0; i < words.length; i += batchSize) {
-        const chunk = words.slice(i, i + batchSize);
-        setCreateStatus(`Tarjima qilinmoqda... (${i + 1}-${Math.min(i + batchSize, words.length)}/${words.length})`);
+      // Identify words that NEED translation (not in translationMap)
+      const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
-        // Batch format: "1. word1\n2. word2..." to force line separation
-        const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
-        const url = `${TRANS_URL}?q=${encodeURIComponent(textToTranslate)}`;
+      if (wordsToQuery.length > 0) {
+        for (let i = 0; i < wordsToQuery.length; i += batchSize) {
+          const chunk = wordsToQuery.slice(i, i + batchSize);
+          setCreateStatus(`Tarjima qilinmoqda... (${i + 1}-${Math.min(i + batchSize, wordsToQuery.length)}/${wordsToQuery.length})`);
 
-        try {
-          const res = await fetch(url, { redirect: "follow" });
-          if (res.ok) {
-            const data = await res.json();
-            const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
+          // Batch format: "1. word1\n2. word2..."
+          const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
 
-            // Robust parsing logic same as worker
-            const lines = translatedBlock.split("\n");
-            let foundIdx = 0;
-            for (const line of lines) {
-              const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
-              if (clean && foundIdx < chunk.length) {
-                translations[chunk[foundIdx]] = clean;
-                foundIdx++;
+          try {
+            // Call our Worker Proxy instead of Google directly (avoids CORS)
+            const res = await fetch(OCR_WORKER_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "translate", text: textToTranslate })
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
+
+              const lines = translatedBlock.split("\n");
+              let foundIdx = 0;
+              for (const line of lines) {
+                const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
+                if (clean && foundIdx < chunk.length) {
+                  translations[chunk[foundIdx]] = clean;
+                  foundIdx++;
+                }
               }
             }
+          } catch (fetchErr) {
+            console.error("Batch fetch error (proxy):", fetchErr);
           }
-        } catch (fetchErr) {
-          console.error("Batch fetch error:", fetchErr);
-        }
 
-        if (i + batchSize < words.length) {
-          await new Promise(resolve => setTimeout(resolve, 300)); // Small pause between batches
+          if (i + batchSize < wordsToQuery.length) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
         }
       }
 
