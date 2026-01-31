@@ -417,10 +417,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         translationMap.set(w, clean);
                         success = true;
                       }
-                    } else if (res.status === 429) {
-                      await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
                     } else {
-                      break; // Non-retryable
+                      const errData = await res.json().catch(() => ({}));
+                      const msg = errData.translated || errData.error || `HTTP ${res.status}`;
+                      translations[w] = `[${msg}]`; // Store error 
+                      if (res.status === 429) {
+                        await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+                      } else {
+                        break;
+                      }
                     }
                   } catch (e) {
                     console.error("Fetch error for word", w, e);
@@ -429,8 +434,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 if (!success) {
-                  translations[w] = "[Tarjima xatosi]";
-                  translationMap.set(w, "[Tarjima xatosi]");
+                  const errMsg = translations[w] || "[Tarjima xatosi]";
+                  translations[w] = errMsg;
+                  translationMap.set(w, errMsg);
                 }
 
                 activeCount--;

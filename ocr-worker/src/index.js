@@ -102,7 +102,8 @@ async function translateWord(word, gasUrl) {
     });
     if (res.ok) {
       const data = await res.json();
-      return parseGoogleResponse(data);
+      const t = parseGoogleResponse(data);
+      if (t && !t.startsWith("[No")) return t;
     }
   } catch (e) { }
 
@@ -112,10 +113,17 @@ async function translateWord(word, gasUrl) {
       const res = await fetch(`${gasUrl}?q=${encodeURIComponent(word)}&sl=en&tl=uz`);
       if (res.ok) {
         const text = await res.text();
-        if (text.trim().startsWith("[")) return parseGoogleResponse(JSON.parse(text));
-        return text.trim() || "[No result from GAS]";
+        const trimmed = text.trim();
+        if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+          const data = JSON.parse(trimmed);
+          if (data.translated) return data.translated;
+          return parseGoogleResponse(data);
+        }
+        return trimmed || "[No result from GAS]";
       }
-    } catch (e) { }
+    } catch (e) {
+      return `[GAS Error: ${e.message}]`;
+    }
   }
 
   return "[Error: Translation blocked]";
