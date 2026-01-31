@@ -37,9 +37,9 @@ export default {
             // Extract word: "1. apple" -> "apple"
             const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
             if (match && match[1]) {
+              const word = match[1].trim();
               const trans = await translateWord(word);
               results.push(`${trans}`); // just payload
-              await sleep(300); // Increased delay to prevent 429
             } else {
               results.push("");
             }

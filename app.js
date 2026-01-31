@@ -368,14 +368,23 @@ document.addEventListener("DOMContentLoaded", () => {
       const words = extractedWords.slice(0, 100);
 
       let translations = {};
-      const batchSize = 5;
+      const batchSize = 3; // SAFE LIMIT
+      const INTER_BATCH_DELAY_MS = 1500; // 1.5s delay to prevent 429
 
       // Identify words that NEED translation (not in translationMap)
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
+        setCreateStatus(`Jami ${wordsToQuery.length} ta so'z tarjima qilinmoqda. Sabr qiling...`);
+
         for (let i = 0; i < wordsToQuery.length; i += batchSize) {
           const chunk = wordsToQuery.slice(i, i + batchSize);
+
+          if (i > 0) {
+            setCreateStatus(`Kuting... (${i}/${wordsToQuery.length})`);
+            await new Promise(r => setTimeout(r, INTER_BATCH_DELAY_MS));
+          }
+
           setCreateStatus(`Tarjima qilinmoqda... (${i + 1}-${Math.min(i + batchSize, wordsToQuery.length)}/${wordsToQuery.length})`);
 
           // Batch format: "1. word1\n2. word2..."
@@ -389,27 +398,40 @@ document.addEventListener("DOMContentLoaded", () => {
               body: JSON.stringify({ action: "translate", text: textToTranslate })
             });
 
-            if (res.ok) {
-              const data = await res.json();
-              const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
+            if (!res.ok) {
+              console.warn("Fetch failed:", res.status);
+              setCreateStatus(`Server band (${res.status}). Qayta urinish...`);
+              await new Promise(r => setTimeout(r, 2000));
+              i -= batchSize; // Retry
+              continue;
+            }
 
-              const lines = translatedBlock.split("\n");
-              let foundIdx = 0;
-              for (const line of lines) {
-                const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
-                if (clean && foundIdx < chunk.length) {
-                  translations[chunk[foundIdx]] = clean;
-                  foundIdx++;
-                }
+            const data = await res.json();
+            const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
+
+            const lines = translatedBlock.split("\n");
+            let foundIdx = 0;
+            for (const line of lines) {
+              const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
+              let clean = match ? match[1].trim() : line.trim();
+
+              if (clean.startsWith("[Exception") || clean.startsWith("[Error")) {
+                console.warn("Translation exception for", chunk[foundIdx], clean);
+              }
+
+              if (clean && foundIdx < chunk.length) {
+                translations[chunk[foundIdx]] = clean;
+                translationMap.set(chunk[foundIdx], clean);
+                foundIdx++;
               }
             }
+            renderWords();
+
           } catch (fetchErr) {
             console.error("Batch fetch error (proxy):", fetchErr);
-            setCreateStatus(`Xato: Tarjima servisi ishlamadi (${fetchErr.message}). Davom etilmoqda...`);
-          }
-
-          if (i + batchSize < wordsToQuery.length) {
-            await new Promise(resolve => setTimeout(resolve, 300));
+            setCreateStatus(`Tarmoq xatosi. Qayta ulanish...`);
+            await new Promise(r => setTimeout(r, 3000));
+            i -= batchSize; // Retry
           }
         }
       }
