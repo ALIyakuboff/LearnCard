@@ -42,7 +42,7 @@ export default {
           const cachedRes = await cache.match(cacheKey);
           if (cachedRes) return cachedRes;
 
-          const translation = await translateWord(word);
+          const translation = await translateWord(word, body.gasUrl);
           const response = json({ translated: translation }, 200, cors);
 
           if (translation && !translation.startsWith("[Error")) {
@@ -107,25 +107,56 @@ function normalizeWord(w) {
   return String(w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
 }
 
-async function translateWord(word) {
+async function translateWord(word, gasUrl = null) {
   const agents = ["dict-chrome-ex", "gtx", "webapp"];
-  const domains = ["translate.googleapis.com", "clients1.google.com", "clients2.google.com", "clients5.google.com"];
+  const domains = [
+    "translate.googleapis.com",
+    "clients1.google.com",
+    "clients2.google.com",
+    "clients5.google.com"
+  ];
 
-  for (const domain of domains) {
+  // Randomize domains to distribute load
+  const shuffledDomains = [...domains].sort(() => Math.random() - 0.5);
+
+  for (const domain of shuffledDomains) {
     for (const client of agents) {
       const url = `https://${domain}/translate_a/single?client=${client}&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
       try {
         const res = await fetch(url, {
-          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
         });
+
         if (res.ok) {
           const data = await res.json();
           return parseGoogleResponse(data);
         }
-        if (res.status === 429) await sleep(1000);
+
+        if (res.status === 429) {
+          // IP blocked for this combo, wait a bit but try next
+          await sleep(200);
+        }
       } catch (e) { }
     }
   }
+
+  // --- LAST RESORT: Google Apps Script ---
+  if (gasUrl) {
+    try {
+      const gUrl = `${gasUrl}?q=${encodeURIComponent(word)}&sl=en&tl=uz`;
+      const res = await fetch(gUrl);
+      if (res.ok) {
+        const text = await res.text();
+        if (text.trim().startsWith("[")) {
+          return parseGoogleResponse(JSON.parse(text));
+        }
+        return text.trim();
+      }
+    } catch (e) { }
+  }
+
   return "[Error: 429 (Busy)]";
 }
 

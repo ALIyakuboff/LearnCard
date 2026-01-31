@@ -373,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (wordsToQuery.length > 0) {
         setCreateStatus(`Jami ${wordsToQuery.length} ta so'z tarjima qilinmoqda...`);
 
-        const CONCURRENCY_LIMIT = 6;
+        const CONCURRENCY_LIMIT = 3;
         let activeCount = 0;
         let wordsProcessed = 0;
 
@@ -391,15 +391,22 @@ document.addEventListener("DOMContentLoaded", () => {
               activeCount++;
 
               (async (w) => {
+                // JITTER: 0-400ms delay per word to avoid concurrent bursts
+                await new Promise(r => setTimeout(r, Math.random() * 400));
+
                 let success = false;
                 let retryLocal = 0;
 
-                while (!success && retryLocal < 3) {
+                while (!success && retryLocal < 4) {
                   try {
                     const res = await fetch(OCR_WORKER_URL, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ action: "translate", word: w })
+                      body: JSON.stringify({
+                        action: "translate",
+                        word: w,
+                        gasUrl: TRANSLATE_URL
+                      })
                     });
 
                     if (res.ok) {
@@ -411,7 +418,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         success = true;
                       }
                     } else if (res.status === 429) {
-                      await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
+                      await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
                     } else {
                       break; // Non-retryable
                     }
