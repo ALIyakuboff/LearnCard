@@ -36,38 +36,46 @@ export default {
           for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
             const chunk = lines.slice(i, i + CHUNK_SIZE);
             const chunkRes = await Promise.all(chunk.map(async (line, idx) => {
-              const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
-              if (!match || !match[1]) return "";
-              const word = match[1].trim();
-              if (!word) return "";
+              try {
+                const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
+                if (!match || !match[1]) return "";
+                const word = match[1].trim();
+                if (!word) return "";
 
-              await sleep(idx * 120); // Stagger starts within chunk
+                await sleep(idx * 50); // Minimal stagger
 
-              const cache = caches.default;
-              const cacheKey = new Request(`https://translate-cache.local/v1/${encodeURIComponent(word.toLowerCase())}`);
-              const cachedRes = await cache.match(cacheKey);
-              if (cachedRes) {
-                const data = await cachedRes.json();
-                return data.t || "";
+                // Cache logic with valid URL structure
+                const cache = caches.default;
+                const cacheUrl = new URL(request.url);
+                cacheUrl.pathname = `/cache-v2/${encodeURIComponent(word.toLowerCase())}`;
+                const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+
+                const cachedRes = await cache.match(cacheKey);
+                if (cachedRes) {
+                  const data = await cachedRes.json();
+                  if (data && data.t) return data.t;
+                }
+
+                const translation = await translateWord(word);
+                if (translation && !translation.startsWith("[Error")) {
+                  const resObj = new Response(JSON.stringify({ t: translation }), {
+                    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=604800" }
+                  });
+                  ctx.waitUntil(cache.put(cacheKey, resObj));
+                }
+                return translation;
+              } catch (innerE) {
+                return `[Error: ${innerE.message}]`;
               }
-
-              const translation = await translateWord(word);
-              if (translation && !translation.startsWith("[Error") && !translation.startsWith("[No translation")) {
-                const resObj = new Response(JSON.stringify({ t: translation }), {
-                  headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=604800" }
-                });
-                ctx.waitUntil(cache.put(cacheKey, resObj));
-              }
-              return translation;
             }));
             results.push(...chunkRes);
-            if (i + CHUNK_SIZE < lines.length) await sleep(300); // Breathe between chunks
           }
+          // ----------------------------
 
           const translated = results.map((t, i) => `${i + 1}. ${t}`).join("\n");
           return json({ translated }, 200, cors);
         } catch (e) {
-          return json({ error: "Parallel translation failed", details: String(e) }, 500, cors);
+          return json({ error: "Parallel failure", details: String(e.stack || e) }, 500, cors);
         }
       }
       return json({ error: "Invalid JSON action" }, 400, cors);
