@@ -141,76 +141,78 @@ function getRandomAgent() {
 }
 
 async function translateWord(word) {
-  // Use Google Translate internal API (GTX)
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
+  const agents = [
+    "dict-chrome-ex",
+    "gtx",
+    "webapp"
+  ];
 
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": getRandomAgent()
-      }
-    });
+  const domains = [
+    "translate.googleapis.com",
+    "clients5.google.com"
+  ];
 
-    if (!res.ok) {
-      if (res.status === 429) return "[Error: 429 (Rate Limit)]";
-      return `[Error: ${res.status}]`;
-    }
+  for (const domain of domains) {
+    for (const client of agents) {
+      const url = `https://${domain}/translate_a/single?client=${client}&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
 
-    const data = await res.json();
+      try {
+        const res = await fetch(url, {
+          headers: { "User-Agent": getRandomAgent() }
+        });
 
-    // 1. Primary translation
-    let mainTranslation = "";
-    if (data[0] && data[0][0] && data[0][0][0]) {
-      mainTranslation = data[0][0][0];
-    }
-
-    // 2. Synonyms (if available) - usually data[1]
-    let synonyms = [];
-    if (data[1] && Array.isArray(data[1])) {
-      // data[1] is list of POS categories: [ ["noun", ["syn1", "syn2"], ...], ["verb", ...]]
-      for (const posBlock of data[1]) {
-        const synList = posBlock[1]; // array of synonyms
-        if (Array.isArray(synList)) {
-          // Take up to 5 synonyms from each category to include more nuances (verbs, nouns)
-          synonyms.push(...synList.slice(0, 5));
+        if (res.ok) {
+          const data = await res.json();
+          return parseGoogleResponse(data);
         }
+
+        // If 429, wait and try next combo
+        if (res.status === 429) {
+          await sleep(1000 + Math.random() * 1000);
+          continue;
+        }
+
+      } catch (e) {
+        // Network error, try next
       }
     }
-
-    // Combine unique values and clean up
-    const candidates = [];
-    if (mainTranslation) candidates.push(mainTranslation);
-    candidates.push(...synonyms);
-
-    // Deduplicate with specific Uzbek heuristics (h/x swapping)
-    const unique = [];
-    const seenKeys = new Set();
-
-    for (const raw of candidates) {
-      const w = String(raw).trim();
-      if (!w) continue;
-
-      const lower = w.toLowerCase();
-      // Create a 'normalized' key for comparison that ignores h/x difference and quotes
-      // This helps dedup 'xavf' vs 'havf' or "o'zbek" vs "o`zbek"
-      const key = lower
-        .replace(/[hx]/g, 'h') // treat h and x as same for duplicate detection
-        .replace(/['`‘’]/g, '') // ignore quotes
-        .replace(/\s+/g, ' ');
-
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        unique.push(w);
-      }
-    }
-
-    // Fallback if empty but success
-    if (unique.length === 0) return "[No translation found]";
-
-    return unique.slice(0, 8).join(", "); // Increased limit to 8
-  } catch (e) {
-    return `[Exception: ${e.message}]`;
   }
+
+  return "[Error: 429 (Busy)]";
+}
+
+function parseGoogleResponse(data) {
+  if (!data) return "";
+
+  // 1. Primary
+  let main = "";
+  if (data[0] && data[0][0] && data[0][0][0]) main = data[0][0][0];
+
+  // 2. Synonyms
+  let synonyms = [];
+  if (data[1] && Array.isArray(data[1])) {
+    for (const posBlock of data[1]) {
+      const synList = posBlock[1];
+      if (Array.isArray(synList)) synonyms.push(...synList.slice(0, 5));
+    }
+  }
+
+  const candidates = [main, ...synonyms];
+  const unique = [];
+  const seenKeys = new Set();
+
+  for (const raw of candidates) {
+    const w = String(raw).trim();
+    if (!w) continue;
+    const key = w.toLowerCase().replace(/[hx]/g, 'h').replace(/['`‘’]/g, '').replace(/\s+/g, ' ');
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      unique.push(w);
+    }
+  }
+
+  if (unique.length === 0) return "[No translation]";
+  return unique.slice(0, 8).join(", ");
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
