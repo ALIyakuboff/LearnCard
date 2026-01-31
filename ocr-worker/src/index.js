@@ -27,43 +27,44 @@ export default {
     if (ct.includes("application/json")) {
       const body = await request.json().catch(() => ({}));
       if (body.action === "translate" && body.text) {
-        // --- CACHE CHECK ---
-        const cachePattern = body.text;
-        const cacheKey = new Request(new URL(request.url).origin + "/cache/translate/" + btoa(unescape(encodeURIComponent(cachePattern))).slice(0, 16));
-        const cache = caches.default;
-        let cachedResponse = await cache.match(cacheKey);
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        // -------------------
-
         try {
           const lines = body.text.split("\n").slice(0, 25);
-          const results = [];
 
-          for (const line of lines) {
+          // PARALLEL EXECUTION: Translate all words at once
+          const results = await Promise.all(lines.map(async (line) => {
             const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
-            if (match && match[1]) {
-              const word = match[1].trim();
-              const trans = await translateWord(word);
-              results.push(`${trans}`);
-            } else {
-              results.push("");
+            if (!match || !match[1]) return "";
+
+            const word = match[1].trim();
+            if (!word) return "";
+
+            // 1. Check Personal/Individual Cache for this word
+            const cache = caches.default;
+            const cacheKey = new Request(`https://translate-cache.local/v1/${encodeURIComponent(word.toLowerCase())}`);
+            const cachedRes = await cache.match(cacheKey);
+            if (cachedRes) {
+              const data = await cachedRes.json();
+              return data.t || "";
             }
-          }
+
+            // 2. Not in cache, translate
+            const translation = await translateWord(word);
+
+            // 3. Save to cache (background) if it's a valid translation
+            if (translation && !translation.startsWith("[Error") && !translation.startsWith("[No translation")) {
+              const resObj = new Response(JSON.stringify({ t: translation }), {
+                headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=604800" } // 1 week
+              });
+              ctx.waitUntil(cache.put(cacheKey, resObj));
+            }
+
+            return translation;
+          }));
 
           const translated = results.map((t, i) => `${i + 1}. ${t}`).join("\n");
-          const responsePayload = { translated };
-          const response = json(responsePayload, 200, cors);
-
-          // --- CACHE SAVE ---
-          response.headers.set("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
-          ctx.waitUntil(cache.put(cacheKey, response.clone()));
-          // -------------------
-
-          return response;
+          return json({ translated }, 200, cors);
         } catch (e) {
-          return json({ error: "Translation proxy failed", details: String(e) }, 500, cors);
+          return json({ error: "Parallel translation failed", details: String(e) }, 500, cors);
         }
       }
       return json({ error: "Invalid JSON action" }, 400, cors);
