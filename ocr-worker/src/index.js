@@ -41,7 +41,7 @@ export default {
               const word = match[1].trim();
               const trans = await translateWord(word);
               results.push(`${trans}`); // just payload
-              await sleep(50); // Speed up for user request
+              // await sleep(0); // No delay for max speed
             } else {
               results.push("");
             }
