@@ -99,23 +99,9 @@ export default {
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
     const words = text ? extractWords(text).slice(0, 100) : [];
 
+    // SKIP server-side translation to avoid "Too many subrequests" error.
+    // Client will handle translation via "Translate & Create" button using safe batching.
     const pairs = [];
-
-    // Process words in parallel batches to be faster, but respectful
-    const batchSize = 5;
-    for (let i = 0; i < words.length; i += batchSize) {
-      const chunk = words.slice(i, i + batchSize);
-      // Parallel requests
-      const promises = chunk.map(w => translateWord(w));
-      const results = await Promise.all(promises);
-
-      chunk.forEach((en, idx) => {
-        pairs.push({ en, uz: results[idx] || "" });
-      });
-
-      // Small delay to be nice to the API
-      if (i + batchSize < words.length) await sleep(200);
-    }
 
     return json({ text, words, pairs }, 200, cors);
   },
