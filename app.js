@@ -1,84 +1,18 @@
 document.addEventListener("DOMContentLoaded", () => {
   // CONFIG: LocalStorage mode with Auth requirement
   const cfg = window.APP_CONFIG || {};
-  const SUPABASE_URL = cfg.SUPABASE_URL || "";
-  const SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY || "";
   const OCR_WORKER_URL = cfg.OCR_WORKER_URL || "";
-  const TRANSLATE_URL = cfg.TRANSLATE_URL || "";
+  // const TRANSLATE_URL = cfg.TRANSLATE_URL || ""; // Unused
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
   const safeTrim = (s) => (s || "").trim();
 
-  const userLine = el("userLine");
-  const accountLabel = el("accountLabel");
-  const signInBtn = el("signInBtn");
-  const signUpBtn = el("signUpBtn");
-  const signOutBtn = el("signOutBtn");
-  const guestView = el("guestView");
-  const userView = el("userView");
+  // Auth elements removed
 
   const imageInput = el("imageInput");
-  const runOcrBtn = el("runOcrBtn");
-  const clearScanBtn = el("clearScanBtn");
-  const ocrStatus = el("ocrStatus");
 
-  const ocrUx = el("ocrUx");
-  const ocrProgressBar = el("ocrProgressBar");
-  const ocrProgressText = el("ocrProgressText");
-
-  const wordsChips = el("wordsChips");
-  const manualWord = el("manualWord");
-  const addManualWordBtn = el("addManualWordBtn");
-
-  const chatTitle = el("chatTitle");
-  const createChatBtn = el("createChatBtn");
-  const createStatus = el("createStatus");
-  const chatList = el("chatList");
-
-  const activeChatTitle = el("activeChatTitle");
-  const activeChatMeta = el("activeChatMeta");
-  const card = el("card");
-  const cardFront = el("cardFront");
-  const cardBack = el("cardBack");
-  const frontText = el("frontText");
-  const backText = el("backText");
-  const exampleText = el("exampleText");
-  const prevBtn = el("prevBtn");
-  const nextBtn = el("nextBtn");
-  const speakBtn = el("speakBtn");
-  const speakBtnBack = el("speakBtnBack");
-
-  const cardsList = el("cardsList");
-
-  function setOcrStatus(msg) { setText(ocrStatus, msg); }
-  function setCreateStatus(msg) { setText(createStatus, msg); }
-
-  function ocrUxShow() {
-    if (!ocrUx) return;
-    ocrUx.classList.remove("hidden");
-    if (ocrProgressBar) ocrProgressBar.style.width = "0%";
-    if (ocrProgressText) ocrProgressText.textContent = "Starting...";
-  }
-  function ocrUxHide() { if (ocrUx) ocrUx.classList.add("hidden"); }
-  function ocrUxSetProgress(pct, text) {
-    const p = Math.max(0, Math.min(100, pct));
-    if (ocrProgressBar) ocrProgressBar.style.width = `${p}%`;
-    if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
-  }
-
-  if (!SUPABASE_URL.startsWith("https://") || SUPABASE_ANON_KEY.length < 40) {
-    setText(userLine, "Supabase config noto‘g‘ri. config.js ni tekshiring.");
-    return;
-  }
-
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  });
-
-  window._sb = supabase;
-
-  let sessionUser = null;
+  // Removed sessionUser
 
   let extractedWords = [];
   let translationMap = new Map();
@@ -168,96 +102,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const headerActions = document.querySelector(".header-actions");
 
-  function setSignedOutUI() {
-    const actions = document.querySelector(".header-actions");
-    if (!sessionUser && document.documentElement.getAttribute("data-auth") === "signed-out" && actions?.querySelector("#signInBtn")) return;
+  // Auth UI and sync logic removed.
 
-    console.log("GOD_MODE: Force GUEST State");
-    sessionUser = null;
-    localStorage.removeItem("LC_USER_EMAIL");
-    document.documentElement.setAttribute("data-auth", "signed-out");
-    document.body.setAttribute("data-auth", "signed-out");
-    if (userLine) userLine.textContent = "- Sign in qiling";
-
-    if (actions) {
-      actions.setAttribute("data-auth", "signed-out");
-      actions.innerHTML = `
-        <div id="guestView" class="account-box">
-          <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
-        </div>
-      `;
-    }
-
-    if (imageInput) imageInput.disabled = true;
-    if (runOcrBtn) runOcrBtn.disabled = true;
-    if (createChatBtn) createChatBtn.disabled = true;
-    chatList.textContent = "Sign in qiling — chatlar shu yerda chiqadi.";
-    setActiveChat(null); loadChats();
-  }
-
-  function setSignedInUI(user) {
-    const email = localStorage.getItem("LC_USER_EMAIL") || user?.email || user?.user_metadata?.email || "Kirilgan";
-
-    if (!sessionUser || sessionUser.id !== user.id) {
-      console.log("GOD_MODE: Force USER State -> " + email);
-    }
-
-    sessionUser = user;
-    document.documentElement.setAttribute("data-auth", "signed-in");
-    document.body.setAttribute("data-auth", "signed-in");
-    if (userLine) userLine.textContent = "Kirgansiz.";
-
-    const forceUI = () => {
-      const actions = document.querySelector(".header-actions");
-      if (!actions) return;
-      actions.setAttribute("data-auth", "signed-in");
-
-      // If guest UI still exists or email label missing, RE-INJECT
-      if (actions.querySelector("#signInBtn") || !actions.querySelector("#accountLabel")) {
-        actions.innerHTML = `
-          <div id="userView" class="account-box" style="display:flex !important;">
-            <div id="accountLabel" class="account-label" style="display:block !important; color:#fff !important; opacity:1 !important; visibility:visible !important;">${email}</div>
-          </div>
-        `;
-      }
-    };
-
-    forceUI();
-    if (imageInput) imageInput.disabled = false;
-    if (runOcrBtn) runOcrBtn.disabled = false;
-    if (createChatBtn) createChatBtn.disabled = false;
-  }
-
-  async function masterSync() {
-    try {
-      const { data } = await supabase.auth.getSession();
-      const user = data?.session?.user || null;
-      if (user) setSignedInUI(user); else setSignedOutUI();
-
-      // Secondary check: Ensure buttons are gone if logged in
-      if (user) {
-        const btn = document.getElementById("signInBtn");
-        if (btn) btn.parentElement.style.display = "none";
-      }
-    } catch (e) { }
-  }
-
-  setInterval(masterSync, 1500);
-
-  async function refreshSession() {
-    await masterSync();
-  }
-
-  async function doLogout() {
-    // Fire and forget - don't wait for server
-    supabase.auth.signOut().catch(() => { });
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
-  }
 
   async function runServerOcr(file) {
-    if (!sessionUser) return setOcrStatus("Avval Sign in qiling.");
+    // Auth check removed
+
     if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
 
     ocrUxShow();
@@ -309,8 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- LOCAL STORAGE HELPERS ---
   function getStorageKey() {
-    if (!sessionUser) return null;
-    return `LC_CHATS_${sessionUser.id}`;
+    return "LC_CHATS_ZIYOKOR";
   }
 
   function getLocalChats() {
@@ -330,8 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // -----------------------------
 
   async function loadChats() {
-    // We still require auth
-    if (!sessionUser) return;
+    // Auth check removed
 
     // Load from LocalStorage (Instant)
     chats = getLocalChats();
@@ -460,7 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------------------
 
   async function createChatFromWords() {
-    if (!sessionUser) return setCreateStatus("Avval Sign in qiling.");
+    // Auth check removed
     if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval Scan qiling.");
 
     createChatBtn.disabled = true;
@@ -586,7 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Events
-  if (signOutBtn) signOutBtn.addEventListener("click", doLogout);
+
 
   if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
     const file = imageInput?.files?.[0];
@@ -652,14 +500,6 @@ document.addEventListener("DOMContentLoaded", () => {
     renderWords();
     setActiveChat(null);
 
-    await refreshSession();
-    if (sessionUser) await loadChats();
-  })();
-
-  supabase.auth.onAuthStateChange(async (_event, session) => {
-    const user = session?.user || null;
-    if (!user) return setSignedOutUI();
-    setSignedInUI(user);
     await loadChats();
-  });
+  })();
 });

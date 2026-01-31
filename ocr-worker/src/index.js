@@ -1,7 +1,8 @@
 export default {
   async fetch(request, env) {
     // URL provided by user
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+    // URL provided by user
+    // NO LONGER USED: const GOOGLE_SCRIPT_URL = "...";
 
     const origin = request.headers.get("Origin") || "*";
     const cors = {
@@ -27,7 +28,27 @@ export default {
       const body = await request.json().catch(() => ({}));
       if (body.action === "translate" && body.text) {
         try {
-          const translated = await translateWord(body.text);
+          // Input: "1. word\n2. word"
+          // We need to parse this back to words to get individual synonyms
+          const lines = body.text.split("\n");
+          const results = [];
+
+          for (const line of lines) {
+            // Extract word: "1. apple" -> "apple"
+            const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
+            if (match && match[1]) {
+              const word = match[1].trim();
+              const trans = await translateWord(word);
+              results.push(`${trans}`); // just payload
+            } else {
+              results.push("");
+            }
+          }
+
+          // Reconstruct as numbered list for app.js compatibility
+          // app.js expects: "1. trans\n2. trans"
+          const translated = results.map((t, i) => `${i + 1}. ${t}`).join("\n");
+
           return json({ translated }, 200, cors);
         } catch (e) {
           return json({ error: "Translation proxy failed", details: String(e) }, 500, cors);
@@ -77,37 +98,22 @@ export default {
     const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
     const words = text ? extractWords(text).slice(0, 100) : [];
 
-    // Numbered batching for strict alignment
-    const batchSize = 25;
     const pairs = [];
 
+    // Process words in parallel batches to be faster, but respectful
+    const batchSize = 5;
     for (let i = 0; i < words.length; i += batchSize) {
       const chunk = words.slice(i, i + batchSize);
-      // Format: "1. word1\n2. word2..." to force line separation
-      const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
+      // Parallel requests
+      const promises = chunk.map(w => translateWord(w));
+      const results = await Promise.all(promises);
 
-      try {
-        const translatedBlock = await translateWord(textToTranslate);
+      chunk.forEach((en, idx) => {
+        pairs.push({ en, uz: results[idx] || "" });
+      });
 
-        // Robust parser: look for number prefixes (1., 2.. etc) or split by line
-        const lines = translatedBlock.split("\n");
-        const results = new Array(chunk.length).fill("");
-
-        let foundIdx = 0;
-        for (const line of lines) {
-          const clean = line.replace(/^\s*\d+[\.\)\:\s-]+\s*/, "").trim();
-          if (clean && foundIdx < chunk.length) {
-            results[foundIdx] = clean;
-            foundIdx++;
-          }
-        }
-
-        chunk.forEach((en, idx) => {
-          pairs.push({ en, uz: results[idx] || "" });
-        });
-      } catch (e) {
-        for (const en of chunk) pairs.push({ en, uz: "" });
-      }
+      // Small delay to be nice to the API
+      if (i + batchSize < words.length) await sleep(200);
     }
 
     return json({ text, words, pairs }, 200, cors);
@@ -135,20 +141,67 @@ function normalizeWord(w) {
 }
 
 async function translateWord(word) {
-  // CONFIG
-  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
-
-  const q = encodeURIComponent(word);
-  const url = `${GOOGLE_SCRIPT_URL}?q=${q}`;
+  // Use Google Translate internal API (GTX)
+  // dt=t (translation), dt=bd (dictionary/synonyms)
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
 
   try {
-    const res = await fetch(url, { redirect: "follow" });
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
     if (!res.ok) return "";
+
     const data = await res.json();
-    const t = data?.translated;
-    return typeof t === "string" ? t.trim() : "";
+
+    // 1. Primary translation
+    let mainTranslation = "";
+    if (data[0] && data[0][0] && data[0][0][0]) {
+      mainTranslation = data[0][0][0];
+    }
+
+    // 2. Synonyms (if available) - usually data[1]
+    let synonyms = [];
+    if (data[1] && Array.isArray(data[1])) {
+      // data[1] is list of POS categories: [ ["noun", ["syn1", "syn2"], ...], ["verb", ...]]
+      for (const posBlock of data[1]) {
+        const synList = posBlock[1]; // array of synonyms
+        if (Array.isArray(synList)) {
+          // Take up to 3 synonyms from each category
+          synonyms.push(...synList.slice(0, 3));
+        }
+      }
+    }
+
+    // Combine unique values and clean up
+    const candidates = [];
+    if (mainTranslation) candidates.push(mainTranslation);
+    candidates.push(...synonyms);
+
+    // Deduplicate with specific Uzbek heuristics (h/x swapping)
+    const unique = [];
+    const seenKeys = new Set();
+
+    for (const raw of candidates) {
+      const w = String(raw).trim();
+      if (!w) continue;
+
+      const lower = w.toLowerCase();
+      // Create a 'normalized' key for comparison that ignores h/x difference and quotes
+      // This helps dedup 'xavf' vs 'havf' or "o'zbek" vs "o`zbek"
+      const key = lower
+        .replace(/[hx]/g, 'h') // treat h and x as same for duplicate detection
+        .replace(/['`‘’]/g, '') // ignore quotes
+        .replace(/\s+/g, ' ');
+
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        unique.push(w);
+      }
+    }
+
+    return unique.slice(0, 5).join(", "); // Limit to 5 total meanings
   } catch (e) {
-    return "";
+    return ""; // fail silently
   }
 }
 

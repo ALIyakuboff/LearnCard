@@ -4,31 +4,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LearnCard</title>
+  <title>ZiyokorVocab</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 
 <body>
   <header class="container header">
     <div class="brand">
-      <div class="logo">LC</div>
+      <img src="./logo.jpg" alt="Logo" class="logo" />
       <div class="brand-text">
         <h1>
-          LearnCard <span class="yokubov-brand">Yokubov</span>
-          <span id="userLine" class="user-line-inline">Sign in qiling.</span>
+          ZiyokorVocab <span class="yokubov-brand">Yokubov</span>
         </h1>
       </div>
     </div>
 
-    <div class="header-actions" data-auth="signed-out">
-      <div id="guestView" class="account-box">
-        <a id="signInBtn" class="btn btn-ghost" href="./auth.html">Sign in</a>
-
-      </div>
-      <div id="userView" class="account-box">
-        <div id="accountLabel" class="account-label"></div>
-      </div>
-    </div>
+    <!-- Auth removed -->
   </header>
 
   <main class="container layout">
@@ -72,13 +63,14 @@
           <input id="chatTitle" class="input" type="text" placeholder="For example, Reading Unit 3" />
         </label>
 
-        <button id="createChatBtn" class="btn btn-primary" type="button">Translate & Create Chat</button>
+        <button id="createChatBtn" class="btn btn-primary" type="button"
+          style="width: 100%; margin-top: 10px;">Translate & Create Chat</button>
         <div id="createStatus" class="status muted"></div>
 
         <div class="divider"></div>
 
         <h2>Chatlar</h2>
-        <div id="chatList" class="chat-list muted">Sign in qiling — chatlar shu yerda chiqadi.</div>
+        <div id="chatList" class="chat-list muted">Chatlar shu yerda chiqadi.</div>
       </div>
     </section>
 
@@ -120,7 +112,7 @@
 
 
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <script src="./config.js?v=20260127-FINAL-FIX"></script>
   <script src="./app.js?v=20260127-FINAL-FIX"></script>
 </body>
