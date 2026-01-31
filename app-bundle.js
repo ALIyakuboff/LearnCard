@@ -3,12 +3,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const cfg = window.APP_CONFIG || {};
   const OCR_WORKER_URL = cfg.OCR_WORKER_URL || "";
   // const TRANSLATE_URL = cfg.TRANSLATE_URL || ""; // Unused
+  const TRANSLATE_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
   const safeTrim = (s) => (s || "").trim();
-
-  // Auth elements removed
 
   const imageInput = el("imageInput");
   const runOcrBtn = el("runOcrBtn");
@@ -59,9 +58,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
   }
 
-
-  // Removed sessionUser
-
   let extractedWords = [];
   let translationMap = new Map();
 
@@ -99,26 +95,20 @@ document.addEventListener("DOMContentLoaded", () => {
         img.onerror = reject;
         img.src = url;
       });
-
       const w = img.naturalWidth || img.width;
       const h = img.naturalHeight || img.height;
-
       const scale = Math.min(1, maxSide / Math.max(w, h));
       const nw = Math.round(w * scale);
       const nh = Math.round(h * scale);
-
       const canvas = document.createElement("canvas");
       canvas.width = nw;
       canvas.height = nh;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, nw, nh);
-
       const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", jpegQuality));
       if (jpegBlob) return new File([jpegBlob], "ocr.jpg", { type: "image/jpeg" });
-
       const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (pngBlob) return new File([pngBlob], "ocr.png", { type: "image/png" });
-
       return originalFile;
     } finally {
       URL.revokeObjectURL(url);
@@ -137,7 +127,8 @@ document.addEventListener("DOMContentLoaded", () => {
     extractedWords.forEach((w) => {
       const chip = document.createElement("div");
       chip.className = "chip";
-      chip.textContent = w;
+      const trans = translationMap.get(w);
+      chip.textContent = trans ? `${w} (${trans})` : w;
       chip.title = "Bosib olib tashlang";
       chip.addEventListener("click", () => {
         extractedWords = extractedWords.filter((x) => x !== w);
@@ -148,52 +139,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const headerActions = document.querySelector(".header-actions");
-
-  // Auth UI and sync logic removed.
-
-
   async function runServerOcr(file) {
-    // Auth check removed
-
     if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
-
     ocrUxShow();
     setOcrStatus("Preparing image...");
     ocrUxSetProgress(10, "Preparing...");
-
     try {
       const fixedFile = await toSafeImageFile(file);
-
       const fd = new FormData();
       fd.append("image", fixedFile, fixedFile.name);
-
       ocrUxSetProgress(55, "OCR server...");
       const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
-
       if (!res.ok) {
-        const msg = json?.error ? String(json.error) : `HTTP ${res.status}`;
-        const prov = json?.providerMessage ? ` (${json.providerMessage})` : "";
-        setOcrStatus(`Server error: ${msg}${prov}`);
+        setOcrStatus(`Server error: ${json?.error || res.status}`);
         ocrUxSetProgress(0, "Failed");
         return;
       }
-
       const text = (json?.text || "").trim();
       let words = Array.isArray(json?.words) ? json.words : [];
       if (words.length === 0 && text) words = extractWordsFromText(text);
-
       extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 100);
-
       translationMap = new Map();
-      const pairs = Array.isArray(json?.pairs) ? json.pairs : [];
-      for (const p of pairs) {
-        const en = normalizeWord(p?.en);
-        if (!en) continue;
-        translationMap.set(en, typeof p?.uz === "string" ? p.uz : "");
-      }
-
       renderWords();
       setOcrStatus(`Done. Words: ${extractedWords.length}`);
       ocrUxSetProgress(100, `Done. ${extractedWords.length} words`);
@@ -205,65 +172,33 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- LOCAL STORAGE HELPERS ---
-  function getStorageKey() {
-    return "LC_CHATS_ZIYOKOR";
-  }
-
+  function getStorageKey() { return "LC_CHATS_ZIYOKOR"; }
   function getLocalChats() {
-    const key = getStorageKey();
-    if (!key) return [];
-    try {
-      return JSON.parse(localStorage.getItem(key) || "[]");
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem(getStorageKey()) || "[]"); } catch { return []; }
   }
-
-  function saveLocalChats(list) {
-    const key = getStorageKey();
-    if (key) localStorage.setItem(key, JSON.stringify(list));
-  }
-  // -----------------------------
+  function saveLocalChats(list) { localStorage.setItem(getStorageKey(), JSON.stringify(list)); }
 
   async function loadChats() {
-    // Auth check removed
-
-    // Load from LocalStorage (Instant)
     chats = getLocalChats();
-    // Sort by Date DESC
     chats.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     renderChatList();
   }
 
   function renderChatList() {
-    // if (!sessionUser) return; 
-
-    if (!chats.length) {
-      chatList.textContent = "Hozircha chat yo‘q.";
-      return;
-    }
-
+    if (!chats.length) { chatList.textContent = "Hozircha chat yo‘q."; return; }
     chatList.innerHTML = "";
     chats.forEach((c) => {
       const wrapper = document.createElement("div");
       wrapper.className = "chat-item-wrapper";
-
       const item = document.createElement("div");
       item.className = "chat-item";
       item.textContent = c.title || "Untitled chat";
       item.style.flex = "1";
       item.addEventListener("click", () => openChat(c));
-
       const delBtn = document.createElement("button");
       delBtn.className = "btn-del";
       delBtn.innerHTML = "🗑️";
-      delBtn.title = "O'chirish";
-      delBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        deleteLocalChat(c.id);
-      });
-
+      delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteLocalChat(c.id); });
       wrapper.appendChild(item);
       wrapper.appendChild(delBtn);
       chatList.appendChild(wrapper);
@@ -273,16 +208,11 @@ document.addEventListener("DOMContentLoaded", () => {
   async function openChat(chat) {
     activeChat = chat;
     setActiveChat(chat);
-    // Cards are embedded in the chat object now
-    let rawCards = chat.cards || [];
-
-    // Auto-Shuffle (Fisher-Yates)
-    activeCards = [...rawCards];
+    activeCards = [...(chat.cards || [])];
     for (let i = activeCards.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [activeCards[i], activeCards[j]] = [activeCards[j], activeCards[i]];
     }
-
     cardIndex = 0;
     renderCard();
     renderCardsList();
@@ -304,14 +234,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderCardsList() {
-    if (!activeChat) {
-      cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
-      return;
-    }
-    if (!activeCards.length) {
-      cardsList.textContent = "Bu chatda card yo‘q.";
-      return;
-    }
+    if (!activeChat) { cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi."; return; }
+    if (!activeCards.length) { cardsList.textContent = "Bu chatda card yo‘q."; return; }
     cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
   }
 
@@ -319,16 +243,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function showBack() { cardFront.classList.add("hidden"); cardBack.classList.remove("hidden"); }
 
   function renderCard() {
-    if (!activeChat) {
+    if (!activeChat || !activeCards.length) {
       showFront();
-      frontText.textContent = "Chat tanlang yoki yarating.";
-      backText.textContent = "—";
-      exampleText.textContent = "";
-      return;
-    }
-    if (!activeCards.length) {
-      showFront();
-      frontText.textContent = "Bu chatda card yo‘q.";
+      frontText.textContent = activeChat ? "Bu chatda card yo‘q." : "Chat tanlang yoki yarating.";
       backText.textContent = "—";
       exampleText.textContent = "";
       return;
@@ -340,189 +257,81 @@ document.addEventListener("DOMContentLoaded", () => {
     exampleText.textContent = "";
   }
 
-  // --- TEXT TO SPEECH ---
   function speakActiveWord() {
-    if (!activeCards[cardIndex]) return;
-    const text = activeCards[cardIndex].en;
+    const text = activeCards[cardIndex]?.en;
     if (!text) return;
-
-    // Use native Speech Synthesis
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
-    utterance.rate = 0.9; // Slightly slower for clarity
-    window.speechSynthesis.cancel(); // Stop current speech
+    utterance.rate = 0.9;
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   }
-  // ---------------------
 
   async function createChatFromWords() {
-    // Auth check removed
     if (!extractedWords.length) return setCreateStatus("So‘zlar yo‘q. Avval Scan qiling.");
-
     createChatBtn.disabled = true;
-
     try {
       setCreateStatus("Tarjima qilinmoqda...");
-
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
       const words = extractedWords.slice(0, 100);
-
       let translations = {};
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        setCreateStatus(`Jami ${wordsToQuery.length} ta so'z tarjima qilinmoqda...`);
-
-        const CONCURRENCY_LIMIT = 3;
-        let activeCount = 0;
-        let wordsProcessed = 0;
-
-        await new Promise((resolve) => {
-          const queue = [...wordsToQuery];
-
-          async function next() {
-            if (queue.length === 0 && activeCount === 0) {
-              resolve();
-              return;
-            }
-
-            while (queue.length > 0 && activeCount < CONCURRENCY_LIMIT) {
-              const word = queue.shift();
-              activeCount++;
-
-              (async (w) => {
-                // JITTER: 0-400ms delay per word to avoid concurrent bursts
-                await new Promise(r => setTimeout(r, Math.random() * 400));
-
-                let success = false;
-                let retryLocal = 0;
-
-                while (!success && retryLocal < 4) {
-                  try {
-                    const res = await fetch(OCR_WORKER_URL, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        action: "translate",
-                        word: w,
-                        gasUrl: TRANSLATE_URL
-                      })
-                    });
-
-                    if (res.ok) {
-                      const data = await res.json();
-                      const clean = typeof data?.translated === "string" ? data.translated : "";
-                      if (clean) {
-                        translations[w] = clean;
-                        translationMap.set(w, clean);
-                        success = true;
-                      }
-                    } else {
-                      const errData = await res.json().catch(() => ({}));
-                      const msg = errData.translated || errData.error || `HTTP ${res.status}`;
-                      translations[w] = `[${msg}]`; // Store error 
-                      if (res.status === 429) {
-                        await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-                      } else {
-                        break;
-                      }
-                    }
-                  } catch (e) {
-                    console.error("Fetch error for word", w, e);
-                  }
-                  retryLocal++;
-                }
-
-                if (!success) {
-                  const errMsg = translations[w] || "[Tarjima xatosi]";
-                  translations[w] = errMsg;
-                  translationMap.set(w, errMsg);
-                }
-
-                activeCount--;
-                wordsProcessed++;
-                setCreateStatus(`Tarjima holati: ${wordsProcessed}/${wordsToQuery.length}`);
-                renderWords();
-                next();
-              })(word);
-            }
+        // SEQUENTIAL STABILITY PROTOCOL (V11)
+        let processed = 0;
+        for (const w of wordsToQuery) {
+          setCreateStatus(`Tarjima: ${processed + 1}/${wordsToQuery.length} (${w})`);
+          let success = false;
+          let retry = 0;
+          while (!success && retry < 3) {
+            try {
+              const res = await fetch(OCR_WORKER_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "translate", word: w, gasUrl: TRANSLATE_URL })
+              });
+              const data = await res.json().catch(() => ({}));
+              if (res.ok && data.translated && !data.translated.startsWith("[")) {
+                translations[w] = data.translated;
+                translationMap.set(w, data.translated);
+                success = true;
+              } else {
+                const msg = data.translated || data.error || `HTTP ${res.status}`;
+                translations[w] = `[${msg}]`;
+                if (res.status === 429) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+                else break;
+              }
+            } catch (e) { console.error(e); }
+            retry++;
           }
-
-          next();
-        });
+          if (!success) { translations[w] = translations[w] || "[Xatolik]"; translationMap.set(w, translations[w]); }
+          processed++;
+          renderWords(); // Real-time update
+          await new Promise(r => setTimeout(r, 200)); // ANTI-BURST
+        }
       }
 
-
-      setCreateStatus("Chat yaratilmoqda...");
-
-      // Prepare local object with translations
       const newChat = {
         id: "loc_" + Date.now(),
         title,
         created_at: new Date().toISOString(),
-        cards: words.map((en) => ({
-          id: "c_" + Math.random().toString(36).slice(2),
-          en,
-          uz: translations[en] || translationMap.get(en) || "",
-        }))
+        cards: words.map((en) => ({ id: "c_" + Math.random().toString(36).slice(2), en, uz: translations[en] || translationMap.get(en) || "" }))
       };
-
-      // Save to USER scoped local storage
       const list = getLocalChats();
       list.push(newChat);
       saveLocalChats(list);
-
       setCreateStatus(`✅ Tayyor. Chat yaratildi (${words.length} ta so‘z).`);
       extractedWords = [];
       translationMap = new Map();
       renderWords();
       chatTitle.value = "";
-
       await loadChats();
       await openChat(newChat);
     } catch (e) {
       setCreateStatus(`Xato: ${e.message || e}`);
-    } finally {
-      createChatBtn.disabled = false;
-    }
+    } finally { createChatBtn.disabled = false; }
   }
-
-  function deleteLocalChat(id) {
-    if (!confirm("Haqiqatdan ham ushbu chatni o'chirmoqchimisiz?")) return;
-    const list = getLocalChats();
-    const filtered = list.filter(c => c.id !== id);
-    saveLocalChats(filtered);
-
-    if (activeChat && activeChat.id === id) {
-      setActiveChat(null);
-    }
-
-    loadChats();
-  }
-
-  // Export active chat
-  function exportActiveChat() {
-    if (!activeChat) return setCreateStatus("Export uchun chat tanlang.");
-
-    const payload = {
-      title: activeChat.title || "Untitled chat",
-      created_at: activeChat.created_at,
-      cards: activeCards.map((c) => ({ en: c.en, uz: c.uz || "" })),
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(activeChat.title || "chat").replace(/\s+/g, "_")}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  // Events
-
 
   if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
     const file = imageInput?.files?.[0];
@@ -548,46 +357,23 @@ document.addEventListener("DOMContentLoaded", () => {
     renderWords();
   });
 
-  if (manualWord) manualWord.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addManualWordBtn?.click();
-    }
-  });
-
+  if (manualWord) manualWord.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addManualWordBtn?.click(); } });
   if (createChatBtn) createChatBtn.addEventListener("click", createChatFromWords);
 
-  const handleSpeak = (e) => {
-    e.stopPropagation(); // Don't flip card
-    speakActiveWord();
-  };
-
+  const handleSpeak = (e) => { e.stopPropagation(); speakActiveWord(); };
   if (speakBtn) speakBtn.addEventListener("click", handleSpeak);
   if (speakBtnBack) speakBtnBack.addEventListener("click", handleSpeak);
 
-  if (card) card.addEventListener("click", () => {
-    if (cardBack && cardBack.classList.contains("hidden")) showBack(); else showFront();
-  });
+  if (card) card.addEventListener("click", () => { if (cardBack && cardBack.classList.contains("hidden")) showBack(); else showFront(); });
 
-  if (prevBtn) prevBtn.addEventListener("click", () => {
-    if (!activeCards.length) return;
-    cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length;
-    renderCard();
-  });
+  if (prevBtn) prevBtn.addEventListener("click", () => { if (!activeCards.length) return; cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length; renderCard(); });
+  if (nextBtn) nextBtn.addEventListener("click", () => { if (!activeCards.length) return; cardIndex = (cardIndex + 1) % activeCards.length; renderCard(); });
 
-  if (nextBtn) nextBtn.addEventListener("click", () => {
-    if (!activeCards.length) return;
-    cardIndex = (cardIndex + 1) % activeCards.length;
-    renderCard();
-  });
-
-  // Init
   (async () => {
     extractedWords = [];
     translationMap = new Map();
     renderWords();
     setActiveChat(null);
-
     await loadChats();
   })();
 });
