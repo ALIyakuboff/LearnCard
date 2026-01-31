@@ -37,9 +37,9 @@ export default {
             // Extract word: "1. apple" -> "apple"
             const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
             if (match && match[1]) {
-              const word = match[1].trim();
               const trans = await translateWord(word);
               results.push(`${trans}`); // just payload
+              await sleep(300); // Increased delay to prevent 429
             } else {
               results.push("");
             }
@@ -143,13 +143,19 @@ function normalizeWord(w) {
 async function translateWord(word) {
   // Use Google Translate internal API (GTX)
   // dt=t (translation), dt=bd (dictionary/synonyms)
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
+  // Force sl=en ensures we get accurate results for English words
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
 
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
     });
-    if (!res.ok) return "";
+
+    if (!res.ok) {
+      return `[Error: ${res.status}]`;
+    }
 
     const data = await res.json();
 
@@ -166,8 +172,8 @@ async function translateWord(word) {
       for (const posBlock of data[1]) {
         const synList = posBlock[1]; // array of synonyms
         if (Array.isArray(synList)) {
-          // Take up to 3 synonyms from each category
-          synonyms.push(...synList.slice(0, 3));
+          // Take up to 5 synonyms from each category to include more nuances (verbs, nouns)
+          synonyms.push(...synList.slice(0, 5));
         }
       }
     }
@@ -199,9 +205,12 @@ async function translateWord(word) {
       }
     }
 
-    return unique.slice(0, 5).join(", "); // Limit to 5 total meanings
+    // Fallback if empty but success
+    if (unique.length === 0) return "[No translation found]";
+
+    return unique.slice(0, 8).join(", "); // Increased limit to 8
   } catch (e) {
-    return ""; // fail silently
+    return `[Exception: ${e.message}]`;
   }
 }
 
