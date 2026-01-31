@@ -368,79 +368,72 @@ document.addEventListener("DOMContentLoaded", () => {
       const words = extractedWords.slice(0, 100);
 
       let translations = {};
-      const batchSize = 10; // Reduced for 429 safety
-      const INTER_BATCH_DELAY_MS = 500; // 0.5s delay
-      let retryCount = 0; // For exponential backoff
-
-      // Identify words that NEED translation (not in translationMap)
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        setCreateStatus(`Jami ${wordsToQuery.length} ta so'z tarjima qilinmoqda. Sabr qiling...`);
+        setCreateStatus(`Jami ${wordsToQuery.length} ta so'z tarjima qilinmoqda...`);
 
-        for (let i = 0; i < wordsToQuery.length; i += batchSize) {
-          const chunk = wordsToQuery.slice(i, i + batchSize);
+        const CONCURRENCY_LIMIT = 6;
+        let activeCount = 0;
+        let wordsProcessed = 0;
 
-          if (i > 0) {
-            setCreateStatus(`Kuting... (${i}/${wordsToQuery.length})`);
-            await new Promise(r => setTimeout(r, INTER_BATCH_DELAY_MS));
-          }
+        await new Promise((resolve) => {
+          const queue = [...wordsToQuery];
 
-          setCreateStatus(`Tarjima qilinmoqda... (${i + 1}-${Math.min(i + batchSize, wordsToQuery.length)}/${wordsToQuery.length})`);
-
-          // Batch format: "1. word1\n2. word2..."
-          const textToTranslate = chunk.map((w, idx) => `${idx + 1}. ${w}`).join("\n");
-
-          try {
-            // Call our Worker Proxy instead of Google directly (avoids CORS)
-            const res = await fetch(OCR_WORKER_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "translate", text: textToTranslate })
-            });
-
-            if (!res.ok) {
-              console.warn("Fetch failed:", res.status);
-              const retryAfter = (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000);
-              setCreateStatus(`Server band (${res.status}). Qayta urinish - ${Math.round(retryAfter / 1000)}s...`);
-              await new Promise(r => setTimeout(r, retryAfter));
-              retryCount++;
-              i -= batchSize; // Retry
-              continue;
+          async function next() {
+            if (queue.length === 0 && activeCount === 0) {
+              resolve();
+              return;
             }
 
-            retryCount = 0; // Reset on success
-            const data = await res.json();
-            const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
+            while (queue.length > 0 && activeCount < CONCURRENCY_LIMIT) {
+              const word = queue.shift();
+              activeCount++;
 
-            const lines = translatedBlock.split("\n");
-            let foundIdx = 0;
-            for (const line of lines) {
-              const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
-              let clean = match ? match[1].trim() : line.trim();
+              (async (w) => {
+                let success = false;
+                let retryLocal = 0;
 
-              if (clean.startsWith("[Exception") || clean.startsWith("[Error")) {
-                console.warn("Translation exception for", chunk[foundIdx], clean);
-              }
+                while (!success && retryLocal < 3) {
+                  try {
+                    const res = await fetch(OCR_WORKER_URL, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ action: "translate", word: w })
+                    });
 
-              if (clean && foundIdx < chunk.length) {
-                translations[chunk[foundIdx]] = clean;
-                translationMap.set(chunk[foundIdx], clean);
-                foundIdx++;
-              }
+                    if (res.ok) {
+                      const data = await res.json();
+                      const clean = typeof data?.translated === "string" ? data.translated : "";
+                      if (clean) {
+                        translations[w] = clean;
+                        translationMap.set(w, clean);
+                        success = true;
+                      }
+                    } else if (res.status === 429) {
+                      await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
+                    } else {
+                      break; // Non-retryable
+                    }
+                  } catch (e) {
+                    console.error("Fetch error for word", w, e);
+                  }
+                  retryLocal++;
+                }
+
+                activeCount--;
+                wordsProcessed++;
+                setCreateStatus(`Tarjima holati: ${wordsProcessed}/${wordsToQuery.length}`);
+                renderWords();
+                next();
+              })(word);
             }
-            renderWords();
-
-          } catch (fetchErr) {
-            console.error("Batch fetch error (proxy):", fetchErr);
-            const retryAfter = (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000);
-            setCreateStatus(`Tarmoq xatosi. Qayta ulanish - ${Math.round(retryAfter / 1000)}s...`);
-            await new Promise(r => setTimeout(r, retryAfter));
-            retryCount++;
-            i -= batchSize; // Retry
           }
-        }
+
+          next();
+        });
       }
+
 
       setCreateStatus("Chat yaratilmoqda...");
 
