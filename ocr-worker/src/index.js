@@ -30,7 +30,8 @@ export default {
         try {
           // Input: "1. word\n2. word"
           // We need to parse this back to words to get individual synonyms
-          const lines = body.text.split("\n");
+          // HARD LIMIT: Only process first 5 lines to prevent "Too many subrequests"
+          const lines = body.text.split("\n").slice(0, 5);
           const results = [];
 
           for (const line of lines) {
