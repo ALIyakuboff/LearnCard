@@ -1,5 +1,5 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // URL provided by user
     // URL provided by user
     // NO LONGER USED: const GOOGLE_SCRIPT_URL = "...";
@@ -27,31 +27,41 @@ export default {
     if (ct.includes("application/json")) {
       const body = await request.json().catch(() => ({}));
       if (body.action === "translate" && body.text) {
+        // --- CACHE CHECK ---
+        const cachePattern = body.text;
+        const cacheKey = new Request(new URL(request.url).origin + "/cache/translate/" + btoa(unescape(encodeURIComponent(cachePattern))).slice(0, 16));
+        const cache = caches.default;
+        let cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        // -------------------
+
         try {
-          // Input: "1. word\n2. word"
-          // We need to parse this back to words to get individual synonyms
-          // HARD LIMIT: Process up to 25 words (safe under 50 subrequest limit)
           const lines = body.text.split("\n").slice(0, 25);
           const results = [];
 
           for (const line of lines) {
-            // Extract word: "1. apple" -> "apple"
             const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
             if (match && match[1]) {
               const word = match[1].trim();
               const trans = await translateWord(word);
-              results.push(`${trans}`); // just payload
-              // await sleep(0); // No delay for max speed
+              results.push(`${trans}`);
             } else {
               results.push("");
             }
           }
 
-          // Reconstruct as numbered list for app.js compatibility
-          // app.js expects: "1. trans\n2. trans"
           const translated = results.map((t, i) => `${i + 1}. ${t}`).join("\n");
+          const responsePayload = { translated };
+          const response = json(responsePayload, 200, cors);
 
-          return json({ translated }, 200, cors);
+          // --- CACHE SAVE ---
+          response.headers.set("Cache-Control", "public, max-age=86400"); // Cache for 24 hours
+          ctx.waitUntil(cache.put(cacheKey, response.clone()));
+          // -------------------
+
+          return response;
         } catch (e) {
           return json({ error: "Translation proxy failed", details: String(e) }, 500, cors);
         }

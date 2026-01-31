@@ -370,6 +370,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let translations = {};
       const batchSize = 15; // MAX SPEED
       const INTER_BATCH_DELAY_MS = 200; // Almost no delay
+      let retryCount = 0; // For exponential backoff
 
       // Identify words that NEED translation (not in translationMap)
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
@@ -400,12 +401,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (!res.ok) {
               console.warn("Fetch failed:", res.status);
-              setCreateStatus(`Server band (${res.status}). Qayta urinish...`);
-              await new Promise(r => setTimeout(r, 2000));
+              const retryAfter = (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000);
+              setCreateStatus(`Server band (${res.status}). Qayta urinish - ${Math.round(retryAfter / 1000)}s...`);
+              await new Promise(r => setTimeout(r, retryAfter));
+              retryCount++;
               i -= batchSize; // Retry
               continue;
             }
 
+            retryCount = 0; // Reset on success
             const data = await res.json();
             const translatedBlock = typeof data?.translated === "string" ? data.translated : "";
 
@@ -429,8 +433,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
           } catch (fetchErr) {
             console.error("Batch fetch error (proxy):", fetchErr);
-            setCreateStatus(`Tarmoq xatosi. Qayta ulanish...`);
-            await new Promise(r => setTimeout(r, 3000));
+            const retryAfter = (Math.pow(2, retryCount) * 1000) + (Math.random() * 1000);
+            setCreateStatus(`Tarmoq xatosi. Qayta ulanish - ${Math.round(retryAfter / 1000)}s...`);
+            await new Promise(r => setTimeout(r, retryAfter));
+            retryCount++;
             i -= batchSize; // Retry
           }
         }
