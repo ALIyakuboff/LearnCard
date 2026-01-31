@@ -41,7 +41,7 @@ export default {
               const word = match[1].trim();
               const trans = await translateWord(word);
               results.push(`${trans}`); // just payload
-              await sleep(100); // Gentle delay for Google
+              await sleep(300); // Gentle delay for Google
             } else {
               results.push("");
             }
@@ -128,20 +128,31 @@ function normalizeWord(w) {
   return String(w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
 }
 
+const AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1"
+];
+
+function getRandomAgent() {
+  return AGENTS[Math.floor(Math.random() * AGENTS.length)];
+}
+
 async function translateWord(word) {
   // Use Google Translate internal API (GTX)
-  // dt=t (translation), dt=bd (dictionary/synonyms)
-  // Force sl=en ensures we get accurate results for English words
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
 
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": getRandomAgent()
       }
     });
 
     if (!res.ok) {
+      if (res.status === 429) return "[Error: 429 (Rate Limit)]";
       return `[Error: ${res.status}]`;
     }
 

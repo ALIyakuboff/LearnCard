@@ -368,8 +368,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const words = extractedWords.slice(0, 100);
 
       let translations = {};
-      const batchSize = 10; // Optimized for fewer requests
-      const INTER_BATCH_DELAY_MS = 2500; // 2.5s delay to clear rate limits
+      const batchSize = 5; // Reduced to 5 for stability
+      const INTER_BATCH_DELAY_MS = 3500; // 3.5s delay to fix Google 429
 
       // Identify words that NEED translation (not in translationMap)
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
