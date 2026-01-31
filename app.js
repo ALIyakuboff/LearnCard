@@ -11,6 +11,54 @@ document.addEventListener("DOMContentLoaded", () => {
   // Auth elements removed
 
   const imageInput = el("imageInput");
+  const runOcrBtn = el("runOcrBtn");
+  const clearScanBtn = el("clearScanBtn");
+  const ocrStatus = el("ocrStatus");
+
+  const ocrUx = el("ocrUx");
+  const ocrProgressBar = el("ocrProgressBar");
+  const ocrProgressText = el("ocrProgressText");
+
+  const wordsChips = el("wordsChips");
+  const manualWord = el("manualWord");
+  const addManualWordBtn = el("addManualWordBtn");
+
+  const chatTitle = el("chatTitle");
+  const createChatBtn = el("createChatBtn");
+  const createStatus = el("createStatus");
+  const chatList = el("chatList");
+
+  const activeChatTitle = el("activeChatTitle");
+  const activeChatMeta = el("activeChatMeta");
+  const card = el("card");
+  const cardFront = el("cardFront");
+  const cardBack = el("cardBack");
+  const frontText = el("frontText");
+  const backText = el("backText");
+  const exampleText = el("exampleText");
+  const prevBtn = el("prevBtn");
+  const nextBtn = el("nextBtn");
+  const speakBtn = el("speakBtn");
+  const speakBtnBack = el("speakBtnBack");
+
+  const cardsList = el("cardsList");
+
+  function setOcrStatus(msg) { setText(ocrStatus, msg); }
+  function setCreateStatus(msg) { setText(createStatus, msg); }
+
+  function ocrUxShow() {
+    if (!ocrUx) return;
+    ocrUx.classList.remove("hidden");
+    if (ocrProgressBar) ocrProgressBar.style.width = "0%";
+    if (ocrProgressText) ocrProgressText.textContent = "Starting...";
+  }
+  function ocrUxHide() { if (ocrUx) ocrUx.classList.add("hidden"); }
+  function ocrUxSetProgress(pct, text) {
+    const p = Math.max(0, Math.min(100, pct));
+    if (ocrProgressBar) ocrProgressBar.style.width = `${p}%`;
+    if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
+  }
+
 
   // Removed sessionUser
 
