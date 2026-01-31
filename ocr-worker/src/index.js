@@ -30,8 +30,8 @@ export default {
         try {
           // Input: "1. word\n2. word"
           // We need to parse this back to words to get individual synonyms
-          // HARD LIMIT: Only process first 5 lines to prevent "Too many subrequests"
-          const lines = body.text.split("\n").slice(0, 5);
+          // HARD LIMIT: Process up to 25 words (safe under 50 subrequest limit)
+          const lines = body.text.split("\n").slice(0, 25);
           const results = [];
 
           for (const line of lines) {
@@ -41,6 +41,7 @@ export default {
               const word = match[1].trim();
               const trans = await translateWord(word);
               results.push(`${trans}`); // just payload
+              await sleep(100); // Gentle delay for Google
             } else {
               results.push("");
             }
