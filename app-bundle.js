@@ -368,8 +368,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const words = extractedWords.slice(0, 100);
 
       let translations = {};
-      const batchSize = 25; // ULTRA SPEED (Worker limit)
-      const INTER_BATCH_DELAY_MS = 100; // Almost instantaneous
+      const batchSize = 10; // Reduced for 429 safety
+      const INTER_BATCH_DELAY_MS = 500; // 0.5s delay
       let retryCount = 0; // For exponential backoff
 
       // Identify words that NEED translation (not in translationMap)

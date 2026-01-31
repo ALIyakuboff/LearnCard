@@ -30,36 +30,39 @@ export default {
         try {
           const lines = body.text.split("\n").slice(0, 25);
 
-          // PARALLEL EXECUTION: Translate all words at once
-          const results = await Promise.all(lines.map(async (line) => {
-            const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
-            if (!match || !match[1]) return "";
+          // --- STAGGERED PARALLELISM ---
+          const results = [];
+          const CHUNK_SIZE = 5;
+          for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
+            const chunk = lines.slice(i, i + CHUNK_SIZE);
+            const chunkRes = await Promise.all(chunk.map(async (line, idx) => {
+              const match = line.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
+              if (!match || !match[1]) return "";
+              const word = match[1].trim();
+              if (!word) return "";
 
-            const word = match[1].trim();
-            if (!word) return "";
+              await sleep(idx * 120); // Stagger starts within chunk
 
-            // 1. Check Personal/Individual Cache for this word
-            const cache = caches.default;
-            const cacheKey = new Request(`https://translate-cache.local/v1/${encodeURIComponent(word.toLowerCase())}`);
-            const cachedRes = await cache.match(cacheKey);
-            if (cachedRes) {
-              const data = await cachedRes.json();
-              return data.t || "";
-            }
+              const cache = caches.default;
+              const cacheKey = new Request(`https://translate-cache.local/v1/${encodeURIComponent(word.toLowerCase())}`);
+              const cachedRes = await cache.match(cacheKey);
+              if (cachedRes) {
+                const data = await cachedRes.json();
+                return data.t || "";
+              }
 
-            // 2. Not in cache, translate
-            const translation = await translateWord(word);
-
-            // 3. Save to cache (background) if it's a valid translation
-            if (translation && !translation.startsWith("[Error") && !translation.startsWith("[No translation")) {
-              const resObj = new Response(JSON.stringify({ t: translation }), {
-                headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=604800" } // 1 week
-              });
-              ctx.waitUntil(cache.put(cacheKey, resObj));
-            }
-
-            return translation;
-          }));
+              const translation = await translateWord(word);
+              if (translation && !translation.startsWith("[Error") && !translation.startsWith("[No translation")) {
+                const resObj = new Response(JSON.stringify({ t: translation }), {
+                  headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=604800" }
+                });
+                ctx.waitUntil(cache.put(cacheKey, resObj));
+              }
+              return translation;
+            }));
+            results.push(...chunkRes);
+            if (i + CHUNK_SIZE < lines.length) await sleep(300); // Breathe between chunks
+          }
 
           const translated = results.map((t, i) => `${i + 1}. ${t}`).join("\n");
           return json({ translated }, 200, cors);
@@ -160,6 +163,8 @@ async function translateWord(word) {
 
   const domains = [
     "translate.googleapis.com",
+    "clients1.google.com",
+    "clients2.google.com",
     "clients5.google.com"
   ];
 
