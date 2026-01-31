@@ -357,6 +357,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           } catch (fetchErr) {
             console.error("Batch fetch error (proxy):", fetchErr);
+            setCreateStatus(`Xato: Tarjima servisi ishlamadi (${fetchErr.message}). Davom etilmoqda...`);
           }
 
           if (i + batchSize < wordsToQuery.length) {
