@@ -9,34 +9,28 @@ export default {
       "Vary": "Origin",
     };
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: cors });
-    }
-
-    if (request.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405, cors);
-    }
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, cors);
 
     const ct = request.headers.get("Content-Type") || "";
 
     // Handle JSON translation requests (Single-word Proxy mode)
     if (ct.includes("application/json")) {
-      const body = await request.json().catch(() => ({}));
+      const rawBody = await request.text().catch(() => "");
+      let body = {};
+      try { body = JSON.parse(rawBody); } catch (e) {
+        return json({ error: "Invalid JSON format", raw: rawBody.slice(0, 100) }, 400, cors);
+      }
+
       if (body.action === "translate" && (body.word || body.text)) {
         try {
-          // Protocol: Expect 'word'. If 'text' provided, take first line
-          let word = body.word || "";
-          if (!word && body.text) {
-            const match = body.text.match(/^\s*\d+[\.\)\:\s-]+\s*(.+)/);
-            word = match ? match[1].trim() : body.text.trim();
-          }
-
+          const word = (body.word || body.text || "").toLowerCase().trim();
           if (!word) return json({ translated: "" }, 200, cors);
 
-          // Cache check (v3)
+          // Cache check (v4)
           const cache = caches.default;
           const cacheUrl = new URL(request.url);
-          cacheUrl.pathname = `/cache-v3/${encodeURIComponent(word.toLowerCase().slice(0, 50))}`;
+          cacheUrl.pathname = `/cache-v4/${encodeURIComponent(word)}`;
           const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
           const cachedRes = await cache.match(cacheKey);
@@ -46,41 +40,38 @@ export default {
           const response = json({ translated: translation }, 200, cors);
 
           if (translation && !translation.startsWith("[Error")) {
-            response.headers.set("Cache-Control", "public, max-age=604800"); // 1 week
+            response.headers.set("Cache-Control", "public, max-age=604800");
             ctx.waitUntil(cache.put(cacheKey, response.clone()));
           }
           return response;
         } catch (e) {
-          return json({ error: "Translation failure", details: String(e.stack || e) }, 500, cors);
+          return json({ error: "Worker crash", details: String(e.stack || e) }, 500, cors);
         }
       }
-      return json({ error: "Invalid JSON action" }, 400, cors);
+      return json({ error: "Action not supported", body }, 400, cors);
     }
 
     // OCR Request
     if (!ct.includes("multipart/form-data")) {
-      return json({ error: "Expected multipart/form-data or application/json" }, 400, cors);
+      return json({ error: "Expected multipart/form-data" }, 400, cors);
     }
 
     const form = await request.formData();
     const file = form.get("image");
-    if (!file) return json({ error: "No image provided." }, 400, cors);
-
-    if (!env.OCR_SPACE_API_KEY) {
-      return json({ error: "OCR API key missing" }, 500, cors);
-    }
+    if (!file) return json({ error: "No image" }, 400, cors);
+    if (!env.OCR_SPACE_API_KEY) return json({ error: "OCR API key missing" }, 500, cors);
 
     const ocrForm = new FormData();
     ocrForm.append("apikey", env.OCR_SPACE_API_KEY);
     ocrForm.append("language", "eng");
     ocrForm.append("OCREngine", "2");
-    ocrForm.append("file", file, file.name || "image.png");
+    ocrForm.append("file", file);
 
     try {
       const res = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: ocrForm });
       const ocrJson = await res.json();
       const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
-      const words = text ? extractWords(text).slice(0, 100) : [];
+      const words = extractWords(text);
       return json({ text, words, pairs: [] }, 200, cors);
     } catch (e) {
       return json({ error: "OCR failed", details: String(e) }, 502, cors);
@@ -89,13 +80,12 @@ export default {
 };
 
 function extractWords(text) {
-  const raw = String(text || "").toLowerCase();
-  const parts = raw.split(/[\s\n\r\t]+/g);
+  const parts = String(text || "").toLowerCase().split(/[\s\n\r\t]+/g);
   const seen = new Set();
   const out = [];
   for (const p of parts) {
-    const w = normalizeWord(p);
-    if (w && w.length >= 3 && !seen.has(w)) {
+    const w = p.trim().replace(/[^a-z']/g, "");
+    if (w.length >= 3 && !seen.has(w)) {
       seen.add(w);
       out.push(w);
     }
@@ -103,78 +93,44 @@ function extractWords(text) {
   return out;
 }
 
-function normalizeWord(w) {
-  return String(w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
-}
-
-async function translateWord(word, gasUrl = null) {
-  const agents = ["dict-chrome-ex", "gtx", "webapp"];
-  const domains = [
-    "translate.googleapis.com",
-    "clients1.google.com",
-    "clients2.google.com",
-    "clients5.google.com"
-  ];
-
-  // Randomize domains to distribute load
-  const shuffledDomains = [...domains].sort(() => Math.random() - 0.5);
-
-  for (const domain of shuffledDomains) {
-    for (const client of agents) {
-      const url = `https://${domain}/translate_a/single?client=${client}&sl=en&tl=uz&dt=t&dt=bd&q=${encodeURIComponent(word)}`;
-      try {
-        const res = await fetch(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          }
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          return parseGoogleResponse(data);
-        }
-
-        if (res.status === 429) {
-          // IP blocked for this combo, wait a bit but try next
-          await sleep(200);
-        }
-      } catch (e) { }
+async function translateWord(word, gasUrl) {
+  // Primary: Google Translate Free API (Direct)
+  const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&q=${encodeURIComponent(word)}`;
+  try {
+    const res = await fetch(gUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return parseGoogleResponse(data);
     }
-  }
+  } catch (e) { }
 
-  // --- LAST RESORT: Google Apps Script ---
+  // Secondary: GAS Fallback
   if (gasUrl) {
     try {
-      const gUrl = `${gasUrl}?q=${encodeURIComponent(word)}&sl=en&tl=uz`;
-      const res = await fetch(gUrl);
+      const res = await fetch(`${gasUrl}?q=${encodeURIComponent(word)}&sl=en&tl=uz`);
       if (res.ok) {
         const text = await res.text();
-        if (text.trim().startsWith("[")) {
-          return parseGoogleResponse(JSON.parse(text));
-        }
-        return text.trim();
+        if (text.trim().startsWith("[")) return parseGoogleResponse(JSON.parse(text));
+        return text.trim() || "[No result from GAS]";
       }
     } catch (e) { }
   }
 
-  return "[Error: 429 (Busy)]";
+  return "[Error: Translation blocked]";
 }
 
 function parseGoogleResponse(data) {
-  if (!data) return "";
-  let main = (data[0] && data[0][0] && data[0][0][0]) || "";
-  let synonyms = [];
-  if (data[1] && Array.isArray(data[1])) {
-    for (const posBlock of data[1]) {
-      const synList = posBlock[1];
-      if (Array.isArray(synList)) synonyms.push(...synList.slice(0, 5));
-    }
+  try {
+    if (!data) return "";
+    let t = (data[0] && data[0][0] && data[0][0][0]) || "";
+    if (!t && data.translated) t = data.translated; // Fallback for some proxies
+    return t || "[No translation]";
+  } catch (e) {
+    return "[Parsing error]";
   }
-  const unique = Array.from(new Set([main, ...synonyms])).filter(v => v && v.trim());
-  return unique.length === 0 ? "[No translation]" : unique.slice(0, 8).join(", ");
 }
-
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function json(payload, status, cors) {
   return new Response(JSON.stringify(payload), {

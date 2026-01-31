@@ -428,6 +428,11 @@ document.addEventListener("DOMContentLoaded", () => {
                   retryLocal++;
                 }
 
+                if (!success) {
+                  translations[w] = "[Tarjima xatosi]";
+                  translationMap.set(w, "[Tarjima xatosi]");
+                }
+
                 activeCount--;
                 wordsProcessed++;
                 setCreateStatus(`Tarjima holati: ${wordsProcessed}/${wordsToQuery.length}`);
