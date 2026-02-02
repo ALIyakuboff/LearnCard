@@ -34,7 +34,7 @@ export default {
         const cachedRes = await cache.match(cacheKey);
         if (cachedRes) return cachedRes;
 
-        const translation = await translateWord(word, body.gasUrl);
+        const translation = await translateWord(word, body.gasUrl, env.AI);
         const response = json({ translated: translation }, 200, cors);
 
         if (translation && !translation.startsWith("[")) {
@@ -71,7 +71,7 @@ export default {
   },
 };
 
-async function translateWord(word, gasUrl) {
+async function translateWord(word, gasUrl, ai) {
   const domains = ["translate.googleapis.com", "clients1.google.com", "clients2.google.com", "clients5.google.com"];
   const agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -103,6 +103,22 @@ async function translateWord(word, gasUrl) {
         return text.trim() || "[Empty GAS]";
       }
     } catch (e) { }
+  }
+
+  // Fallback: Cloudflare Workers AI (Scalable for 1000+ users)
+  if (ai) {
+    try {
+      const response = await ai.run("@cf/meta/m2m100-1.2b", {
+        text: word,
+        source_lang: "en",
+        target_lang: "uz"
+      });
+      if (response && response.translated_text) {
+        return response.translated_text;
+      }
+    } catch (e) {
+      // AI failed
+    }
   }
 
   return "[Error: 429]";
