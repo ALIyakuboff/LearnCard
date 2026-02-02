@@ -497,6 +497,15 @@ h2 {
 }
 
 /* YOKUBOV BRAND STYLES */
+.yokubov-link {
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.yokubov-link:hover {
+  opacity: 0.8;
+}
+
 .yokubov-brand {
   font-size: 11px;
   background: rgba(34, 197, 94, 0.15);
