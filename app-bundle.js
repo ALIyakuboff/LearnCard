@@ -1,9 +1,13 @@
 document.addEventListener("DOMContentLoaded", () => {
   // CONFIG: LocalStorage mode with Auth requirement
   const cfg = window.APP_CONFIG || {};
-  const OCR_WORKER_URL = cfg.OCR_WORKER_URL || "";
-  // const TRANSLATE_URL = cfg.TRANSLATE_URL || ""; // Unused
-  const TRANSLATE_URL = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+  const OCR_WORKER_URLS = cfg.OCR_WORKER_URLS || {};
+  const TRANSLATE_WORKER_URLS = cfg.TRANSLATE_WORKER_URLS || {};
+  let currentLevel = localStorage.getItem("LC_SELECTED_LEVEL") || "beginner";
+  let activeWorkerUrl = OCR_WORKER_URLS[currentLevel] || "";
+  let activeTranslateUrl = TRANSLATE_WORKER_URLS[currentLevel] || "";
+
+  const GAS_TRANSLATE_URL = cfg.GAS_TRANSLATE_URL || "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
@@ -41,6 +45,29 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtnBack = el("speakBtnBack");
 
   const cardsList = el("cardsList");
+  const levelBtns = document.querySelectorAll(".level-btn");
+
+  function updateActiveLevel(level) {
+    currentLevel = level;
+    activeWorkerUrl = OCR_WORKER_URLS[level] || "";
+    activeTranslateUrl = TRANSLATE_WORKER_URLS[level] || "";
+    localStorage.setItem("LC_SELECTED_LEVEL", level);
+    levelBtns.forEach(btn => {
+      if (btn.dataset.level === level) btn.classList.add("active");
+      else btn.classList.remove("active");
+    });
+    console.log(`Level: ${level}, OCR: ${activeWorkerUrl}, Trans: ${activeTranslateUrl}`);
+  }
+
+  levelBtns.forEach(btn => {
+    btn.addEventListener("click", () => updateActiveLevel(btn.dataset.level));
+  });
+
+  // Init UI
+  levelBtns.forEach(btn => {
+    if (btn.dataset.level === currentLevel) btn.classList.add("active");
+    else btn.classList.remove("active");
+  });
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
@@ -140,7 +167,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function runServerOcr(file) {
-    if (!OCR_WORKER_URL.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
+    if (!activeWorkerUrl || !activeWorkerUrl.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
     ocrUxShow();
     setOcrStatus("Preparing image...");
     ocrUxSetProgress(10, "Preparing...");
@@ -149,7 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const fd = new FormData();
       fd.append("image", fixedFile, fixedFile.name);
       ocrUxSetProgress(55, "OCR server...");
-      const res = await fetch(OCR_WORKER_URL, { method: "POST", body: fd });
+      const res = await fetch(activeWorkerUrl, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setOcrStatus(`Server error: ${json?.error || res.status}`);
@@ -286,10 +313,11 @@ document.addEventListener("DOMContentLoaded", () => {
           let retry = 0;
           while (!success && retry < 3) {
             try {
-              const res = await fetch(OCR_WORKER_URL, {
+              // Dedicated Translation Worker request
+              const res = await fetch(activeTranslateUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "translate", word: w, gasUrl: TRANSLATE_URL })
+                body: JSON.stringify({ word: w })
               });
               const data = await res.json().catch(() => ({}));
               if (res.ok && data.translated && !data.translated.startsWith("[")) {
@@ -297,10 +325,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 translationMap.set(w, data.translated);
                 success = true;
               } else {
-                const msg = data.translated || data.error || `HTTP ${res.status}`;
-                translations[w] = `[${msg}]`;
-                if (res.status === 429) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-                else break;
+                // Secondary Fallback: Use OCR worker for translation
+                const resOcr = await fetch(activeWorkerUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "translate", word: w, gasUrl: GAS_TRANSLATE_URL })
+                });
+                const dataOcr = await resOcr.json().catch(() => ({}));
+                if (resOcr.ok && dataOcr.translated && !dataOcr.translated.startsWith("[")) {
+                  translations[w] = dataOcr.translated;
+                  translationMap.set(w, dataOcr.translated);
+                  success = true;
+                } else {
+                  const msg = dataOcr.translated || dataOcr.error || `HTTP ${resOcr.status}`;
+                  translations[w] = `[${msg}]`;
+                  if (resOcr.status === 429) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
+                  else break;
+                }
               }
             } catch (e) { console.error(e); }
             retry++;
