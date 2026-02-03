@@ -113,7 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  async function toSafeImageFile(originalFile, maxSide = 1600, jpegQuality = 0.85) {
+  async function toSafeImageFile(originalFile, maxSide = 1000, jpegQuality = 0.85) {
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
     try {
