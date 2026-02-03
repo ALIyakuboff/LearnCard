@@ -55,18 +55,18 @@ export default {
       const arrayBuffer = await file.arrayBuffer();
       const binaryImage = new Uint8Array(arrayBuffer);
 
-      // Use Cloudflare AI for OCR
+      // Use Cloudflare AI for OCR with improved prompt
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
-        image: Array.from(binaryImage), // Large images might still need conversion but LLava expects specific formats. Actually AI.run on Workers handles Uint8Array.
-        prompt: "Identify and list all English words visible in this image. Return just the text separated by spaces. If no text is visible, say 'no text found'.",
-        max_tokens: 512
+        image: Array.from(binaryImage),
+        prompt: "Transcribe all English text from this image exactly. List every single word you can see, including very short words. Return only the extracted text separated by spaces.",
+        max_tokens: 1024
       });
 
       const text = String(aiResponse?.description || "").trim();
       const words = text.toLowerCase().split(/[\s\n\r\t]+/g)
         .map(w => w.replace(/[^a-z']/g, ""))
-        .filter(w => w.length >= 3)
-        .slice(0, 100);
+        .filter(w => w.length >= 2) // Allow shorter words like 'is', 'to', 'at'
+        .slice(0, 200);
 
       return json({ text, words: Array.from(new Set(words)), pairs: [] }, 200, cors);
     } catch (e) {
