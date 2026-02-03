@@ -51,22 +51,26 @@ export default {
     if (!file) return json({ error: "No image provided" }, 400, cors);
 
     try {
-      // Use Uint8Array directly for better memory efficiency (serverless & stateless)
       const arrayBuffer = await file.arrayBuffer();
-      const binaryImage = new Uint8Array(arrayBuffer);
+      const uint8Array = new Uint8Array(arrayBuffer);
 
-      // Use Cloudflare AI for OCR with improved prompt
+      let binary = "";
+      for (let i = 0; i < uint8Array.byteLength; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      const base64Image = btoa(binary);
+
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
-        image: Array.from(binaryImage),
-        prompt: "Transcribe all English text from this image exactly. List every single word you can see, including very short words. Return only the extracted text separated by spaces.",
+        image: base64Image,
+        prompt: "Extract all English text from this image. Return only the text, nothing else.",
         max_tokens: 1024
       });
 
-      const text = String(aiResponse?.description || "").trim();
-      const words = text.toLowerCase().split(/[\s\n\r\t]+/g)
-        .map(w => w.replace(/[^a-z']/g, ""))
-        .filter(w => w.length >= 2) // Allow shorter words like 'is', 'to', 'at'
-        .slice(0, 200);
+      const text = String(aiResponse?.description || aiResponse?.text || "").trim();
+      const words = text.toLowerCase().split(/[\s\n\r\t,.;:!?]+/g)
+        .map(w => w.replace(/[^a-z0-9']/g, ""))
+        .filter(w => w.length >= 2)
+        .slice(0, 300);
 
       return json({ text, words: Array.from(new Set(words)), pairs: [] }, 200, cors);
     } catch (e) {
