@@ -54,26 +54,31 @@ export default {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
-      // Ultra-fast base64 conversion for Cloudflare Workers (avoids CPU limit)
+      // ✅ Proper and fast base64 conversion for large images (Stable)
       const base64Image = btoa(new TextDecoder('latin1').decode(uint8Array));
 
-      // Original prompt that gave 90+ words
+      // ✅ High-Level OCR Prompt
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
         image: base64Image,
-        prompt: "Identify and list all English words visible in this image. Return just the text separated by spaces.",
-        max_tokens: 1536
+        prompt: "You are a highly accurate OCR scanner. Identify and transcribe every single English word visible in this image. List them all separated by spaces. Do not skip or summarize.",
+        max_tokens: 2048
       });
 
       const text = String(aiResponse?.description || aiResponse?.text || "").trim();
 
-      // Extract words accurately
+      // ✅ Precise word extraction
       const words = text.toLowerCase()
         .replace(/[^a-z0-9'\s]/g, " ")
         .split(/\s+/)
         .filter(w => w.length >= 2)
         .slice(0, 500);
 
-      return json({ text, words: Array.from(new Set(words)), pairs: [] }, 200, cors);
+      return json({
+        text,
+        words: Array.from(new Set(words)),
+        pairs: [],
+        debug: { length: text.length, count: words.length }
+      }, 200, cors);
     } catch (e) {
       return json({ error: "OCR failed", details: String(e.message || e) }, 502, cors);
     }

@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
 
-  const cardsList = el("cardsList");
+  const cardsList = el("cardsList") || el("chatList"); // Fallback to chatList if cardsList is missing
   const levelBtns = document.querySelectorAll(".level-btn");
 
   function updateActiveLevel(level) {
@@ -269,6 +269,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderCardsList() {
+    if (!cardsList) return;
     if (!activeChat) { cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi."; return; }
     if (!activeCards.length) { cardsList.textContent = "Bu chatda card yo‘q."; return; }
     cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
