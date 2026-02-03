@@ -80,11 +80,12 @@ export default {
         debug: { length: text.length, count: words.length }
       }, 200, cors);
     } catch (e) {
-      console.error("OCR Worker Error:", e);
+      console.error("OCR Worker Exception:", e);
       return json({
         error: "OCR Processor Error",
-        message: e.message || String(e),
-        suggestion: "Rasm sifatini pasaytirib yoki boshqa rasm bilan qayta urinib ko'ring."
+        message: String(e.message || e),
+        model: "@cf/llava-hf/llava-1.5-7b-hf",
+        suggestion: "Try with a smaller/clearer image or retry in a few seconds."
       }, 500, cors);
     }
   },

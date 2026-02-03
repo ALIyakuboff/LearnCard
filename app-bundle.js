@@ -40,7 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const nextBtn = el("nextBtn");
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
-  const cardsList = el("chatList"); // Use chatList as container for list
+  const cardsList = el("chatList"); // Ensure this is accessible throughout the scope
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
@@ -152,7 +152,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch(activeWorkerUrl, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setOcrStatus(`Server error: ${json?.error || res.status}`);
+        const errorMsg = json?.message || json?.error || res.statusText || res.status;
+        setOcrStatus(`Server error: ${errorMsg}`);
+        console.error("OCR Server Response Error:", json);
         ocrUxSetProgress(0, "Failed");
         return;
       }
