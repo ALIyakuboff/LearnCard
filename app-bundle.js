@@ -40,7 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const nextBtn = el("nextBtn");
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
-  const cardsList = el("chatList"); // Ensure this is accessible throughout the scope
+  const cardsList = el("cardsList"); // New separate container
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
@@ -250,10 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderCardsList() {
-    if (!cardsList) {
-      console.warn("cardsList element not found in DOM");
-      return;
-    }
+    if (!cardsList) return;
     if (!activeChat) {
       cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
       return;
