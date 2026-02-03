@@ -183,6 +183,14 @@ document.addEventListener("DOMContentLoaded", () => {
         ocrUxSetProgress(0, "Failed");
         return;
       }
+
+      // Check if OCR is not configured
+      if (json?.error === "OCR service not configured") {
+        setOcrStatus("⚠️ OCR sozlanmagan. Qo'lda so'z kiriting.");
+        ocrUxSetProgress(0, "Not configured");
+        return;
+      }
+
       const text = (json?.text || "").trim();
       let words = Array.isArray(json?.words) ? json.words : [];
       if (words.length === 0 && text) words = extractWordsFromText(text);

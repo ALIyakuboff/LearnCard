@@ -48,7 +48,18 @@ export default {
     // OCR
     const form = await request.formData();
     const file = form.get("image");
-    if (!file || !env.OCR_SPACE_API_KEY) return json({ error: "Missing assets" }, 400, cors);
+    if (!file) return json({ error: "No image provided" }, 400, cors);
+
+    // Check if OCR_SPACE_API_KEY is available
+    if (!env.OCR_SPACE_API_KEY) {
+      return json({
+        error: "OCR service not configured",
+        message: "Please configure OCR_SPACE_API_KEY in Cloudflare Worker settings or use manual word input.",
+        text: "",
+        words: [],
+        pairs: []
+      }, 200, cors);
+    }
 
     const ocrForm = new FormData();
     ocrForm.append("apikey", env.OCR_SPACE_API_KEY);
