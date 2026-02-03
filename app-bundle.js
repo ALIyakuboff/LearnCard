@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
 
-  const cardsList = el("cardsList") || el("chatList"); // Fallback to chatList if cardsList is missing
+  const cardsList = el("cardsList") || el("chatList");
   const levelBtns = document.querySelectorAll(".level-btn");
 
   function updateActiveLevel(level) {
@@ -217,6 +217,15 @@ document.addEventListener("DOMContentLoaded", () => {
     chats = getLocalChats();
     chats.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     renderChatList();
+  }
+
+  function deleteLocalChat(id) {
+    if (!confirm("Haqiqatdan ham bu chatni o‘chirmoqchimisiz?")) return;
+    let list = getLocalChats();
+    list = list.filter(c => c.id !== id);
+    saveLocalChats(list);
+    if (activeChat && activeChat.id === id) setActiveChat(null);
+    loadChats();
   }
 
   function renderChatList() {
