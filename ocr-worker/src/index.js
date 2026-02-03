@@ -80,7 +80,12 @@ export default {
         debug: { length: text.length, count: words.length }
       }, 200, cors);
     } catch (e) {
-      return json({ error: "OCR failed", details: String(e.message || e) }, 502, cors);
+      // Return 500 instead of 502 to avoid gateway confusion, include full error message
+      return json({
+        error: "OCR Processor Error",
+        message: e.message || String(e),
+        details: "Surat hajmini kichraytirib qayta urinib ko'ring."
+      }, 500, cors);
     }
   },
 };

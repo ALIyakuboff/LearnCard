@@ -113,7 +113,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  async function toSafeImageFile(originalFile, maxSide = 1000, jpegQuality = 0.85) {
+  async function toSafeImageFile(originalFile, maxSide = 800, jpegQuality = 0.7) {
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
     try {
@@ -278,9 +278,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderCardsList() {
-    if (!cardsList) return;
-    if (!activeChat) { cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi."; return; }
-    if (!activeCards.length) { cardsList.textContent = "Bu chatda card yo‘q."; return; }
+    if (!cardsList) {
+      console.warn("cardsList element not found in DOM");
+      return;
+    }
+    if (!activeChat) {
+      cardsList.textContent = "Chat tanlansa, cardlar ro‘yxati shu yerda ko‘rinadi.";
+      return;
+    }
+    if (!activeCards.length) {
+      cardsList.textContent = "Bu chatda card yo‘q.";
+      return;
+    }
     cardsList.textContent = activeCards.map((c, i) => `${i + 1}. ${c.en} → ${c.uz || ""}`).join("\n");
   }
 
