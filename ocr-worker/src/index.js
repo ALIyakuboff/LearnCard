@@ -57,11 +57,11 @@ export default {
       // ✅ Proper and fast base64 conversion for large images (Stable)
       const base64Image = btoa(new TextDecoder('latin1').decode(uint8Array));
 
-      // ✅ High-Level OCR Prompt
+      // ✅ Raw OCR Prompt - No summary, no smart logic, just transcription
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
         image: base64Image,
-        prompt: "You are a highly accurate OCR scanner. Identify and transcribe every single English word visible in this image. List them all separated by spaces. Do not skip or summarize.",
-        max_tokens: 2048
+        prompt: "Transcribe all text from this image. Output only the words separated by spaces.",
+        max_tokens: 1536
       });
 
       const text = String(aiResponse?.description || aiResponse?.text || "").trim();
