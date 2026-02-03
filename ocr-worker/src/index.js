@@ -54,23 +54,24 @@ export default {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
-      let binary = "";
-      for (let i = 0; i < uint8Array.byteLength; i++) {
-        binary += String.fromCharCode(uint8Array[i]);
-      }
-      const base64Image = btoa(binary);
+      // Ultra-fast base64 conversion for Cloudflare Workers (avoids CPU limit)
+      const base64Image = btoa(new TextDecoder('latin1').decode(uint8Array));
 
+      // Original prompt that gave 90+ words
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
         image: base64Image,
-        prompt: "Extract all English text from this image. Return only the text, nothing else.",
-        max_tokens: 1024
+        prompt: "Identify and list all English words visible in this image. Return just the text separated by spaces.",
+        max_tokens: 1536
       });
 
       const text = String(aiResponse?.description || aiResponse?.text || "").trim();
-      const words = text.toLowerCase().split(/[\s\n\r\t,.;:!?]+/g)
-        .map(w => w.replace(/[^a-z0-9']/g, ""))
+
+      // Extract words accurately
+      const words = text.toLowerCase()
+        .replace(/[^a-z0-9'\s]/g, " ")
+        .split(/\s+/)
         .filter(w => w.length >= 2)
-        .slice(0, 300);
+        .slice(0, 500);
 
       return json({ text, words: Array.from(new Set(words)), pairs: [] }, 200, cors);
     } catch (e) {
