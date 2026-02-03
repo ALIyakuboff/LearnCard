@@ -45,39 +45,32 @@ export default {
       }
     }
 
-    // OCR
+    // OCR using Cloudflare Workers AI (FREE 300k/month!)
     const form = await request.formData();
     const file = form.get("image");
     if (!file) return json({ error: "No image provided" }, 400, cors);
 
-    // Check if OCR_SPACE_API_KEY is available
-    if (!env.OCR_SPACE_API_KEY) {
-      return json({
-        error: "OCR service not configured",
-        message: "Please configure OCR_SPACE_API_KEY in Cloudflare Worker settings or use manual word input.",
-        text: "",
-        words: [],
-        pairs: []
-      }, 200, cors);
-    }
-
-    const ocrForm = new FormData();
-    ocrForm.append("apikey", env.OCR_SPACE_API_KEY);
-    ocrForm.append("language", "eng");
-    ocrForm.append("OCREngine", "2");
-    ocrForm.append("file", file);
-
     try {
-      const res = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: ocrForm });
-      const ocrJson = await res.json();
-      const text = String(ocrJson?.ParsedResults?.[0]?.ParsedText || "").trim();
+      // Convert image to base64
+      const arrayBuffer = await file.arrayBuffer();
+      const base64Image = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+
+      // Use Cloudflare AI for OCR
+      const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
+        image: base64Image,
+        prompt: "Extract all English text from this image. Return only the text, nothing else.",
+        max_tokens: 512
+      });
+
+      const text = String(aiResponse?.description || "").trim();
       const words = text.toLowerCase().split(/[\s\n\r\t]+/g)
         .map(w => w.replace(/[^a-z']/g, ""))
         .filter(w => w.length >= 3)
         .slice(0, 100);
+
       return json({ text, words: Array.from(new Set(words)), pairs: [] }, 200, cors);
     } catch (e) {
-      return json({ error: "OCR failed" }, 502, cors);
+      return json({ error: "OCR failed", details: String(e.message || e) }, 502, cors);
     }
   },
 };
