@@ -52,23 +52,29 @@ export default {
 
 async function translateWord(word, ai) {
     // 1. Google Translate (Direct undocumented API)
-    const domains = ["translate.googleapis.com", "clients1.google.com", "clients5.google.com"];
+    const domains = [
+        "translate.googleapis.com",
+        "clients1.google.com",
+        "clients2.google.com",
+        "clients3.google.com",
+        "clients5.google.com"
+    ];
     const agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
     ];
 
     for (const domain of domains) {
         const url = `https://${domain}/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&q=${encodeURIComponent(word)}`;
         try {
             const res = await fetch(url, {
-                headers: { "User-Agent": agents[Math.floor(Math.random() * agents.length)] },
-                cf: { cacheTtl: 86400 }
+                headers: { "User-Agent": agents[Math.floor(Math.random() * agents.length)] }
             });
             if (res.ok) {
                 const data = await res.json();
                 const t = data?.[0]?.[0]?.[0];
-                if (t) return t;
+                if (t && t !== word) return t;
             }
         } catch (e) { }
     }

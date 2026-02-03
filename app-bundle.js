@@ -305,15 +305,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        // SEQUENTIAL STABILITY PROTOCOL (V11)
+        // SEQUENTIAL STABILITY PROTOCOL (V12)
         let processed = 0;
         for (const w of wordsToQuery) {
           setCreateStatus(`Tarjima: ${processed + 1}/${wordsToQuery.length} (${w})`);
+          let translationResult = "";
           let success = false;
-          let retry = 0;
-          while (!success && retry < 3) {
+
+          // Strategy 1: Dedicated Translation Worker
+          if (activeTranslateUrl) {
             try {
-              // Dedicated Translation Worker request
               const res = await fetch(activeTranslateUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -321,35 +322,48 @@ document.addEventListener("DOMContentLoaded", () => {
               });
               const data = await res.json().catch(() => ({}));
               if (res.ok && data.translated && !data.translated.startsWith("[")) {
-                translations[w] = data.translated;
-                translationMap.set(w, data.translated);
+                translationResult = data.translated;
+                success = true;
+              } else if (res.status === 404) {
+                console.warn(`Translate worker 404: ${activeTranslateUrl}`);
+              }
+            } catch (e) {
+              console.error(`Translate worker error for ${w}:`, e);
+            }
+          }
+
+          // Strategy 2: OCR Worker Fallback (Action: translate)
+          if (!success && activeWorkerUrl) {
+            try {
+              const resOcr = await fetch(activeWorkerUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "translate", word: w, gasUrl: GAS_TRANSLATE_URL })
+              });
+              const dataOcr = await resOcr.json().catch(() => ({}));
+              if (resOcr.ok && dataOcr.translated && !dataOcr.translated.startsWith("[")) {
+                translationResult = dataOcr.translated;
                 success = true;
               } else {
-                // Secondary Fallback: Use OCR worker for translation
-                const resOcr = await fetch(activeWorkerUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "translate", word: w, gasUrl: GAS_TRANSLATE_URL })
-                });
-                const dataOcr = await resOcr.json().catch(() => ({}));
-                if (resOcr.ok && dataOcr.translated && !dataOcr.translated.startsWith("[")) {
-                  translations[w] = dataOcr.translated;
-                  translationMap.set(w, dataOcr.translated);
-                  success = true;
-                } else {
-                  const msg = dataOcr.translated || dataOcr.error || `HTTP ${resOcr.status}`;
-                  translations[w] = `[${msg}]`;
-                  if (resOcr.status === 429) await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
-                  else break;
-                }
+                translationResult = dataOcr.translated || dataOcr.error || `Error ${resOcr.status}`;
               }
-            } catch (e) { console.error(e); }
-            retry++;
+            } catch (e) {
+              console.error(`OCR fallback error for ${w}:`, e);
+              translationResult = "Connection Error";
+            }
           }
-          if (!success) { translations[w] = translations[w] || "[Xatolik]"; translationMap.set(w, translations[w]); }
+
+          if (success) {
+            translations[w] = translationResult;
+            translationMap.set(w, translationResult);
+          } else {
+            translations[w] = translationResult ? `[${translationResult}]` : "[Xatolik]";
+            translationMap.set(w, translations[w]);
+          }
+
           processed++;
           renderWords(); // Real-time update
-          await new Promise(r => setTimeout(r, 200)); // ANTI-BURST
+          await new Promise(r => setTimeout(r, 150)); // ANTI-BURST
         }
       }
 
