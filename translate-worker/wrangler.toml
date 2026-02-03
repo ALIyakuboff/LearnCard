@@ -1,4 +1,5 @@
 name = "learncard-translate"
+account_id = "b75be94e1adc9a5010d095f86a3c5ace"
 main = "src/index.js"
 compatibility_date = "2026-02-02"
 compatibility_flags = ["nodejs_compat"]
