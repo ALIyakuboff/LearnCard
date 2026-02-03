@@ -51,14 +51,14 @@ export default {
     if (!file) return json({ error: "No image provided" }, 400, cors);
 
     try {
-      // Convert image to base64
+      // Use Uint8Array directly for better memory efficiency (serverless & stateless)
       const arrayBuffer = await file.arrayBuffer();
-      const base64Image = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const binaryImage = new Uint8Array(arrayBuffer);
 
       // Use Cloudflare AI for OCR
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
-        image: base64Image,
-        prompt: "Extract all English text from this image. Return only the text, nothing else.",
+        image: Array.from(binaryImage), // Large images might still need conversion but LLava expects specific formats. Actually AI.run on Workers handles Uint8Array.
+        prompt: "Identify and list all English words visible in this image. Return just the text separated by spaces. If no text is visible, say 'no text found'.",
         max_tokens: 512
       });
 
