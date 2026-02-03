@@ -54,14 +54,11 @@ export default {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
-      // ✅ Proper and fast base64 conversion for large images (Stable)
-      const base64Image = btoa(new TextDecoder('latin1').decode(uint8Array));
-
-      // ✅ Optimized for stability and speed (Eliminates 502)
+      // ✅ Sending image as array of numbers - Solves "failed to decode u8"
       const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
-        image: base64Image,
-        prompt: "Transcribe all English text from this image. List only the words separated by spaces.",
-        max_tokens: 1280 // Safe limit for Free Tier CPU time
+        image: Array.from(uint8Array),
+        prompt: "Identify and list all English words visible in this image. Return just the words separated by spaces.",
+        max_tokens: 1024
       });
 
       const text = String(aiResponse?.description || aiResponse?.text || "").trim();
