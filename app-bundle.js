@@ -393,7 +393,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
     const file = imageInput?.files?.[0];
     if (!file) return setOcrStatus("Avval rasm tanlang.");
-    await runServerOcr(file);
+    await runClientOcr(file);
   });
 
   if (clearScanBtn) clearScanBtn.addEventListener("click", () => {
