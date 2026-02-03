@@ -40,7 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const nextBtn = el("nextBtn");
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
-
+  const cardsList = el("chatList"); // Use chatList as container for list
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }

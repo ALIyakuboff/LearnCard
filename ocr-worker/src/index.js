@@ -80,11 +80,11 @@ export default {
         debug: { length: text.length, count: words.length }
       }, 200, cors);
     } catch (e) {
-      // Return 500 instead of 502 to avoid gateway confusion, include full error message
+      console.error("OCR Worker Error:", e);
       return json({
         error: "OCR Processor Error",
         message: e.message || String(e),
-        details: "Surat hajmini kichraytirib qayta urinib ko'ring."
+        suggestion: "Rasm sifatini pasaytirib yoki boshqa rasm bilan qayta urinib ko'ring."
       }, 500, cors);
     }
   },
