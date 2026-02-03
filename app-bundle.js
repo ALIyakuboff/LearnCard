@@ -1,11 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   // CONFIG: LocalStorage mode with Auth requirement
   const cfg = window.APP_CONFIG || {};
-  const OCR_WORKER_URLS = cfg.OCR_WORKER_URLS || {};
-  const TRANSLATE_WORKER_URLS = cfg.TRANSLATE_WORKER_URLS || {};
-  let currentLevel = localStorage.getItem("LC_SELECTED_LEVEL") || "beginner";
-  let activeWorkerUrl = OCR_WORKER_URLS[currentLevel] || "";
-  let activeTranslateUrl = TRANSLATE_WORKER_URLS[currentLevel] || "";
+  const activeWorkerUrl = cfg.OCR_WORKER_URL || "";
+  const activeTranslateUrl = cfg.TRANSLATE_WORKER_URL || "";
 
   const GAS_TRANSLATE_URL = cfg.GAS_TRANSLATE_URL || "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
 
@@ -44,30 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtn = el("speakBtn");
   const speakBtnBack = el("speakBtnBack");
 
-  const cardsList = el("cardsList") || el("chatList");
-  const levelBtns = document.querySelectorAll(".level-btn");
-
-  function updateActiveLevel(level) {
-    currentLevel = level;
-    activeWorkerUrl = OCR_WORKER_URLS[level] || "";
-    activeTranslateUrl = TRANSLATE_WORKER_URLS[level] || "";
-    localStorage.setItem("LC_SELECTED_LEVEL", level);
-    levelBtns.forEach(btn => {
-      if (btn.dataset.level === level) btn.classList.add("active");
-      else btn.classList.remove("active");
-    });
-    console.log(`Level: ${level}, OCR: ${activeWorkerUrl}, Trans: ${activeTranslateUrl}`);
-  }
-
-  levelBtns.forEach(btn => {
-    btn.addEventListener("click", () => updateActiveLevel(btn.dataset.level));
-  });
-
-  // Init UI
-  levelBtns.forEach(btn => {
-    if (btn.dataset.level === currentLevel) btn.classList.add("active");
-    else btn.classList.remove("active");
-  });
 
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
