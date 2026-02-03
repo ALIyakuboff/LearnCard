@@ -139,46 +139,43 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function runServerOcr(file) {
-    if (!activeWorkerUrl || !activeWorkerUrl.startsWith("https://")) return setOcrStatus("Worker URL yo‘q.");
-    ocrUxShow();
-    setOcrStatus("Preparing image...");
-    ocrUxSetProgress(10, "Preparing...");
+  async function runClientOcr(file) {
+    if (!file) return;
     try {
-      const fixedFile = await toSafeImageFile(file);
-      const fd = new FormData();
-      fd.append("image", fixedFile, fixedFile.name);
-      ocrUxSetProgress(55, "OCR server...");
-      const res = await fetch(activeWorkerUrl, { method: "POST", body: fd });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const errorMsg = json?.message || json?.error || res.statusText || res.status;
-        setOcrStatus(`Server error: ${errorMsg}`);
-        console.error("OCR Server Response Error:", json);
-        ocrUxSetProgress(0, "Failed");
+      ocrUxShow();
+      ocrUxSetProgress(10, "Skaner tayyorlanmoqda...");
+
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            ocrUxSetProgress(20 + Math.round(m.progress * 70), `Skanerlash: ${Math.round(m.progress * 100)}%`);
+          }
+        }
+      });
+
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+
+      if (!text || text.trim().length < 2) {
+        setOcrStatus("⚠️ Matn topilmadi. Boshqa rasm bilan ko'ring.");
+        ocrUxSetProgress(0, "No text found");
         return;
       }
 
-      // Check if OCR is not configured
-      if (json?.error === "OCR service not configured") {
-        setOcrStatus("⚠️ OCR sozlanmagan. Qo'lda so'z kiriting.");
-        ocrUxSetProgress(0, "Not configured");
-        return;
-      }
+      console.log("OCR Result:", text);
+      const words = extractWordsFromText(text);
+      extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 150);
 
-      const text = (json?.text || "").trim();
-      let words = Array.isArray(json?.words) ? json.words : [];
-      if (words.length === 0 && text) words = extractWordsFromText(text);
-      extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 100);
       translationMap = new Map();
       renderWords();
-      setOcrStatus(`Done. Words: ${extractedWords.length}`);
-      ocrUxSetProgress(100, `Done. ${extractedWords.length} words`);
+      setOcrStatus(`Muvaffaqiyatli: ${extractedWords.length} ta so'z ajratildi.`);
+      ocrUxSetProgress(100, "Tayyor!");
     } catch (e) {
-      setOcrStatus(`OCR error: ${String(e?.message || e)}`);
-      ocrUxSetProgress(0, "Failed");
+      console.error("Client OCR Error:", e);
+      setOcrStatus(`Skanerlashda xato: ${e.message || e}`);
+      ocrUxSetProgress(0, "Xato");
     } finally {
-      setTimeout(() => ocrUxHide(), 600);
+      setTimeout(() => ocrUxHide(), 1000);
     }
   }
 
