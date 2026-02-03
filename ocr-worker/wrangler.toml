@@ -1,4 +1,5 @@
 name = "learncard-ocr"
+account_id = "aac51c1c29f456175827abe281fcbc3c"
 main = "src/index.js"
 compatibility_date = "2026-01-24"
 compatibility_flags = ["nodejs_compat"]
