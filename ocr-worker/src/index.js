@@ -116,8 +116,14 @@ async function translateWithGemini(text, apiKey) {
       const data = await response.json();
 
       if (data.error) {
-        if (data.error.code === 404 || data.error.status === "NOT_FOUND") {
-          lastError = `${model}: 404 Not Found`;
+        if (
+          data.error.code === 404 ||
+          data.error.status === "NOT_FOUND" ||
+          data.error.code === 429 ||
+          data.error.status === "RESOURCE_EXHAUSTED" ||
+          data.error.message.toLowerCase().includes("quota")
+        ) {
+          lastError = `${model}: ${data.error.message}`;
           continue;
         }
         return `[Error: ${data.error.message} (Model: ${model})]`;
@@ -161,46 +167,67 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
     "gemini-1.5-pro"
   ];
 
-  let lastError = "No vision models available";
+  let globalRetries = 1;
 
-  for (const model of models) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  while (globalRetries >= 0) {
+    lastError = "No vision models available";
 
-    const requestBody = {
-      contents: [{
-        parts: [
-          { text: "Identify and list all English words visible in this image. Return just the words separated by spaces. Ignore non-text elements." },
-          { inline_data: { mime_type: mimeType, data: base64Image } }
-        ]
-      }]
-    };
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
-      });
+      const requestBody = {
+        contents: [{
+          parts: [
+            { text: "Identify and list all English words visible in this image. Return just the words separated by spaces. Ignore non-text elements." },
+            { inline_data: { mime_type: mimeType, data: base64Image } }
+          ]
+        }]
+      };
 
-      const data = await response.json();
-      if (data.error) {
-        if (data.error.code === 404 || data.error.status === "NOT_FOUND") {
-          lastError = `${model}: 404`;
-          continue;
+      try {
+        // Standard fetch to allow immediate failover on error
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+        if (data.error) {
+          if (
+            data.error.code === 404 ||
+            data.error.status === "NOT_FOUND" ||
+            data.error.code === 429 ||
+            data.error.status === "RESOURCE_EXHAUSTED" ||
+            data.error.message.toLowerCase().includes("quota")
+          ) {
+            lastError = `${model}: ${data.error.message}`;
+            continue;
+          }
+          throw new Error(data.error.message);
         }
-        throw new Error(data.error.message);
+
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text.trim();
+
+      } catch (e) {
+        lastError = e.message;
       }
+    }
 
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text.trim();
-
-    } catch (e) {
-      lastError = e.message;
+    if (globalRetries > 0) {
+      globalRetries--;
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    } else {
+      break;
     }
   }
 
   throw new Error(`Vision models failed: ${lastError}`);
 }
+
+
 
 function arrayBufferToBase64(buffer) {
   let binary = '';

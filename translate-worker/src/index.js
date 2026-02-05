@@ -21,112 +21,59 @@ export default {
 
             if (!word) return json({ translated: "" }, 200, cors);
 
-            // Cache (Eski so'rovlarni xotirada saqlash)
+            // Cache Logic (Cloudflare Native Cache)
             const cache = caches.default;
             const cacheUrl = new URL(request.url);
-            cacheUrl.pathname = `/translate-gemini-v1/${encodeURIComponent(word.toLowerCase())}`;
+            cacheUrl.pathname = `/translate-v1/${encodeURIComponent(word.toLowerCase())}`;
             const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
             const cachedRes = await cache.match(cacheKey);
             if (cachedRes) return cachedRes;
 
-            // Asosiy tarjima logikasi (Gemini)
-            const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
+            // Run Translation via Cloudflare AI (M2M100)
+            // This restores the "old" behavior which was reliable and unlimited.
+            const response = await runTranslation(word, env.AI);
 
-            const response = json({ translated: translation }, 200, cors);
-
-            // Agar tarjima muvaffaqiyatli bo'lsa, uni uzoq muddatga (30 kun) keshga qo'yamiz
-            if (translation && !translation.startsWith("[")) {
-                response.headers.set("Cache-Control", "public, max-age=2592000");
+            // Cache success
+            if (response.status === 200) {
+                response.headers.set("Cache-Control", "public, max-age=2592000"); // 30 days
                 ctx.waitUntil(cache.put(cacheKey, response.clone()));
             }
 
             return response;
 
         } catch (e) {
-            return json({ error: String(e.message) }, 400, cors);
+            return json({ error: String(e.message) }, 500, cors);
         }
     },
 };
 
-async function translateWithGemini(text, apiKey) {
-    if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
-
-    const models = [
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-001",
-        "gemini-2.5-flash",
-        "gemini-exp-1206",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-pro",
-        "gemini-pro"
-    ];
-
-    const prompt = `
-    Translate the following text to Uzbek.
-    Rules:
-    1. Return ONLY the translated text.
-    2. Do NOT add explanations or notes.
-    3. Do NOT add "o'z" prefix blindly.
-    4. If the word has multiple meanings, provide the most common one.
-    5. Text to translate: "${text}"
-    `;
-
-    let lastError = "No models available";
-
-    for (const model of models) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-        try {
-            const response = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.error) {
-                // If 404 (Model not found), continue to next model
-                if (data.error.code === 404 || data.error.status === "NOT_FOUND") {
-                    lastError = `${model}: 404 Not Found`;
-                    continue;
-                }
-                return `[Error: ${data.error.message} (Model: ${model})]`;
-            }
-
-            const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (translatedText) return translatedText.trim();
-
-        } catch (e) {
-            lastError = e.message;
-        }
+async function runTranslation(text, ai) {
+    if (!ai) {
+        return json({ error: "AI binding not found. Please check wrangler.toml" }, 500, { "Access-Control-Allow-Origin": "*" });
     }
 
-    // If all failed, try to list available models to debug
     try {
-        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-        const listRes = await fetch(listUrl);
-        const listData = await listRes.json();
+        // @cf/meta/m2m100-1.2b is the standard free translation model
+        const response = await ai.run('@cf/meta/m2m100-1.2b', {
+            text: text,
+            source_lang: 'english',
+            target_lang: 'uzbek'
+        });
 
-        if (listData.models) {
-            const availableNames = listData.models.map(m => m.name.replace("models/", "")).join(", ");
-            return `[Error: Models not found. Available models for this key: ${availableNames}. Last Error: ${lastError}]`;
-        } else {
-            return `[Error: All models failed and ListModels failed. Last Error: ${lastError}. List Error: ${JSON.stringify(listData)}]`;
-        }
+        return json({ translated: response.translated_text }, 200, {
+            "Access-Control-Allow-Origin": "*"
+        });
     } catch (e) {
-        return `[Error: All models failed. Key validation failed. Last Error: ${lastError}]`;
+        return json({ error: `Translation failed: ${e.message}` }, 500, {
+            "Access-Control-Allow-Origin": "*"
+        });
     }
 }
 
-function json(payload, status, cors) {
+function json(payload, status, headers) {
     return new Response(JSON.stringify(payload), {
         status,
-        headers: { ...cors, "Content-Type": "application/json" },
+        headers: { ...headers, "Content-Type": "application/json" },
     });
 }
