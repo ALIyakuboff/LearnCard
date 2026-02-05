@@ -52,7 +52,7 @@ export default {
 async function translateWithGemini(text, apiKey) {
     if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
     const prompt = `
     Translate the following text to Uzbek.
@@ -76,12 +76,18 @@ async function translateWithGemini(text, apiKey) {
         const data = await response.json();
 
         if (data.error) {
-            console.error("Gemini Error:", data.error);
-            return `[Error: ${data.error.message}]`;
+            return `[Error: ${data.error.message} (Code: ${data.error.code})]`;
         }
 
-        const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        return translatedText ? translatedText.trim() : "[Error: No translation]";
+        const candidate = data?.candidates?.[0];
+        const translatedText = candidate?.content?.parts?.[0]?.text;
+
+        if (!translatedText) {
+            const blockReason = candidate?.finishReason || data?.promptFeedback?.blockReason || "UNKNOWN";
+            return `[Error: No translation. Reason: ${blockReason}. Raw: ${JSON.stringify(data).slice(0, 200)}...]`;
+        }
+
+        return translatedText.trim();
 
     } catch (e) {
         return `[Error: ${e.message}]`;

@@ -87,9 +87,9 @@ export default {
 // --- HELPER FUNCTIONS ---
 
 async function translateWithGemini(text, apiKey) {
-  if (!apiKey) return "[Error: GEMINI_API_KEY not set]";
+  if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
   const prompt = `Translate to Uzbek. Return ONLY the translation. Text: "${text}"`;
 
   try {
@@ -98,8 +98,22 @@ async function translateWithGemini(text, apiKey) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
     });
+
     const data = await response.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "[Error: No translation]";
+
+    if (data.error) {
+      return `[Error: ${data.error.message} (Code: ${data.error.code})]`;
+    }
+
+    const candidate = data?.candidates?.[0];
+    const translatedText = candidate?.content?.parts?.[0]?.text;
+
+    if (!translatedText) {
+      const blockReason = candidate?.finishReason || data?.promptFeedback?.blockReason || "UNKNOWN";
+      return `[Error: No translation. Reason: ${blockReason}. Raw: ${JSON.stringify(data).slice(0, 200)}...]`;
+    }
+
+    return translatedText.trim();
   } catch (e) {
     return `[Error: ${e.message}]`;
   }
@@ -108,7 +122,7 @@ async function translateWithGemini(text, apiKey) {
 async function ocrWithGemini(base64Image, mimeType, apiKey) {
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
   const requestBody = {
     contents: [{
