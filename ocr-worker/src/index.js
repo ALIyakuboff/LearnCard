@@ -12,8 +12,10 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, cors);
 
+    // 1. Check Content-Type to distinguish between JSON (Translate) and FormData (OCR)
     const ct = request.headers.get("Content-Type") || "";
 
+    // --- TRANSLATE ACTION ---
     if (ct.includes("application/json")) {
       const rawBody = await request.text().catch(() => "");
       let body = {};
@@ -22,48 +24,42 @@ export default {
       }
 
       if (body.action === "translate") {
-        const word = (body.word || body.text || "").toLowerCase().trim();
+        const word = (body.word || body.text || "").trim();
         if (!word) return json({ translated: "" }, 200, cors);
 
-        // Cache V5 (Sequential)
+        // Cache V6 (Gemini)
         const cache = caches.default;
         const cacheUrl = new URL(request.url);
-        cacheUrl.pathname = `/cache-v5/${encodeURIComponent(word)}`;
+        cacheUrl.pathname = `/cache-gemini-v1/${encodeURIComponent(word.toLowerCase())}`;
         const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
         const cachedRes = await cache.match(cacheKey);
         if (cachedRes) return cachedRes;
 
-        const translation = await translateWord(word, body.gasUrl, env.AI);
+        const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
         const response = json({ translated: translation }, 200, cors);
 
         if (translation && !translation.startsWith("[")) {
-          response.headers.set("Cache-Control", "public, max-age=604800");
+          response.headers.set("Cache-Control", "public, max-age=2592000"); // 30 kun
           ctx.waitUntil(cache.put(cacheKey, response.clone()));
         }
         return response;
       }
     }
 
-    // OCR using Cloudflare Workers AI (FREE 300k/month!)
-    const form = await request.formData();
-    const file = form.get("image");
-    if (!file) return json({ error: "No image provided" }, 400, cors);
-
+    // --- OCR ACTION (Gemini Vision) ---
     try {
+      const form = await request.formData();
+      const file = form.get("image");
+      if (!file) return json({ error: "No image provided" }, 400, cors);
+
       const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64Image = arrayBufferToBase64(arrayBuffer);
+      const mimeType = file.type || "image/jpeg";
 
-      // ✅ Sending image as array of numbers - Solves "failed to decode u8"
-      const aiResponse = await env.AI.run("@cf/llava-hf/llava-1.5-7b-hf", {
-        image: Array.from(uint8Array),
-        prompt: "Identify and list all English words visible in this image. Return just the words separated by spaces.",
-        max_tokens: 1024
-      });
+      const text = await ocrWithGemini(base64Image, mimeType, env.GEMINI_API_KEY);
 
-      const text = String(aiResponse?.description || aiResponse?.text || "").trim();
-
-      // ✅ Precise word extraction
+      // Extract words for frontend compatibility
       const words = text.toLowerCase()
         .replace(/[^a-z0-9'\s]/g, " ")
         .split(/\s+/)
@@ -76,69 +72,78 @@ export default {
         pairs: [],
         debug: { length: text.length, count: words.length }
       }, 200, cors);
+
     } catch (e) {
       console.error("OCR Worker Exception:", e);
       return json({
         error: "OCR Processor Error",
         message: String(e.message || e),
-        model: "@cf/llava-hf/llava-1.5-7b-hf",
-        suggestion: "Try with a smaller/clearer image or retry in a few seconds."
+        model: "gemini-1.5-flash"
       }, 500, cors);
     }
   },
 };
 
-async function translateWord(word, gasUrl, ai) {
-  const domains = ["translate.googleapis.com", "clients1.google.com", "clients2.google.com", "clients5.google.com"];
-  const agents = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
-  ];
+// --- HELPER FUNCTIONS ---
 
-  for (const domain of domains) {
-    const url = `https://${domain}/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&q=${encodeURIComponent(word)}`;
-    try {
-      const res = await fetch(url, { headers: { "User-Agent": agents[Math.floor(Math.random() * agents.length)] } });
-      if (res.ok) {
-        const data = await res.json();
-        const t = data?.[0]?.[0]?.[0];
-        if (t) return t;
-      }
-    } catch (e) { }
+async function translateWithGemini(text, apiKey) {
+  if (!apiKey) return "[Error: GEMINI_API_KEY not set]";
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const prompt = `Translate to Uzbek. Return ONLY the translation. Text: "${text}"`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await response.json();
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "[Error: No translation]";
+  } catch (e) {
+    return `[Error: ${e.message}]`;
   }
+}
 
-  if (gasUrl) {
-    try {
-      const res = await fetch(`${gasUrl}?q=${encodeURIComponent(word)}&sl=en&tl=uz`);
-      if (res.ok) {
-        const text = await res.text();
-        if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
-          const data = JSON.parse(text);
-          return data.translated || data?.[0]?.[0]?.[0] || "[No GAS translation]";
+async function ocrWithGemini(base64Image, mimeType, apiKey) {
+  if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  const requestBody = {
+    contents: [{
+      parts: [
+        { text: "Identify and list all English words visible in this image. Return just the words separated by spaces. Ignore non-text elements." },
+        {
+          inline_data: {
+            mime_type: mimeType,
+            data: base64Image
+          }
         }
-        return text.trim() || "[Empty GAS]";
-      }
-    } catch (e) { }
-  }
+      ]
+    }]
+  };
 
-  // Fallback: Cloudflare Workers AI (Scalable for 1000+ users)
-  if (ai) {
-    try {
-      const response = await ai.run("@cf/meta/m2m100-1.2b", {
-        text: word,
-        source_lang: "en",
-        target_lang: "uz"
-      });
-      if (response && response.translated_text) {
-        return response.translated_text;
-      }
-    } catch (e) {
-      // AI failed
-    }
-  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody)
+  });
 
-  return "[Error: 429]";
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 function json(payload, status, cors) {

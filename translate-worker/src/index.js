@@ -11,34 +11,33 @@ export default {
 
         if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-        // Tarjima faqat POST orqali
         if (request.method !== "POST") {
             return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: cors });
         }
 
         try {
             const body = await request.json();
-            const word = (body.word || "").toLowerCase().trim();
+            const word = (body.word || "").trim();
 
             if (!word) return json({ translated: "" }, 200, cors);
 
             // Cache (Eski so'rovlarni xotirada saqlash)
             const cache = caches.default;
             const cacheUrl = new URL(request.url);
-            cacheUrl.pathname = `/translate-v1/${encodeURIComponent(word)}`;
+            cacheUrl.pathname = `/translate-gemini-v1/${encodeURIComponent(word.toLowerCase())}`;
             const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
             const cachedRes = await cache.match(cacheKey);
             if (cachedRes) return cachedRes;
 
-            // Asosiy tarjima logikasi
-            const translation = await translateWord(word, env.AI);
+            // Asosiy tarjima logikasi (Gemini)
+            const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
 
             const response = json({ translated: translation }, 200, cors);
 
-            // Agar tarjima muvaffaqiyatli bo'lsa, uni 1 haftaga keshga qo'yamiz
+            // Agar tarjima muvaffaqiyatli bo'lsa, uni uzoq muddatga (30 kun) keshga qo'yamiz
             if (translation && !translation.startsWith("[")) {
-                response.headers.set("Cache-Control", "public, max-age=604800");
+                response.headers.set("Cache-Control", "public, max-age=2592000");
                 ctx.waitUntil(cache.put(cacheKey, response.clone()));
             }
 
@@ -50,50 +49,43 @@ export default {
     },
 };
 
-async function translateWord(word, ai) {
-    // 1. Google Translate (Direct undocumented API)
-    const domains = [
-        "translate.googleapis.com",
-        "clients1.google.com",
-        "clients2.google.com",
-        "clients3.google.com",
-        "clients5.google.com"
-    ];
-    const agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
-    ];
+async function translateWithGemini(text, apiKey) {
+    if (!apiKey) return "[Error: GEMINI_API_KEY not set]";
 
-    for (const domain of domains) {
-        const url = `https://${domain}/translate_a/single?client=gtx&sl=en&tl=uz&dt=t&q=${encodeURIComponent(word)}`;
-        try {
-            const res = await fetch(url, {
-                headers: { "User-Agent": agents[Math.floor(Math.random() * agents.length)] }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const t = data?.[0]?.[0]?.[0];
-                if (t && t !== word) return t;
-            }
-        } catch (e) { }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const prompt = `
+    Translate the following text to Uzbek.
+    Rules:
+    1. Return ONLY the translated text.
+    2. Do NOT add explanations or notes.
+    3. Do NOT add "o'z" prefix blindly.
+    4. If the word has multiple meanings, provide the most common one.
+    5. Text to translate: "${text}"
+    `;
+
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            console.error("Gemini Error:", data.error);
+            return `[Error: ${data.error.message}]`;
+        }
+
+        const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        return translatedText ? translatedText.trim() : "[Error: No translation]";
+
+    } catch (e) {
+        return `[Error: ${e.message}]`;
     }
-
-    // 2. Fallback: Cloudflare Workers AI
-    if (ai) {
-        try {
-            const response = await ai.run("@cf/meta/m2m100-1.2b", {
-                text: word,
-                source_lang: "en",
-                target_lang: "uz"
-            });
-            if (response && response.translated_text) {
-                return response.translated_text;
-            }
-        } catch (e) { }
-    }
-
-    return "[Xatolik: 429]";
 }
 
 function json(payload, status, cors) {
