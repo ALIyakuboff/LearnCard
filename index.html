@@ -31,7 +31,7 @@
 
       <div class="form" style="margin-top:10px;">
         <label class="label">
-          Rasm tanlang (JPG, PNG)
+          Rasm tanlang
           <input id="imageInput" class="input" type="file" accept="image/*" />
         </label>
 
@@ -105,6 +105,26 @@
       <div class="row row-center">
         <button id="prevBtn" class="btn btn-secondary" type="button">Prev</button>
         <button id="nextBtn" class="btn btn-secondary" type="button">Next</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="card-header">
+        <h2>Vocabulary Test</h2>
+      </div>
+      <div class="card" id="testCard">
+        <div class="card-face">
+          <div class="card-label muted">TEST</div>
+          <div class="card-text" id="testQuestionWord">Start Scan First</div>
+          <div id="testOptions" class="quiz-options">
+            <!-- Dynamic options -->
+          </div>
+        </div>
+      </div>
+
+      <div class="row row-center">
+        <button id="testPrevBtn" class="btn btn-secondary" type="button">Prev</button>
+        <button id="testNextBtn" class="btn btn-secondary" type="button">Next</button>
       </div>
 
       <div class="divider"></div>

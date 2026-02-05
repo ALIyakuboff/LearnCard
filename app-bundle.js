@@ -42,6 +42,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const speakBtnBack = el("speakBtnBack");
   const cardsList = el("cardsList"); // New separate container
 
+  // TEST CARD ELEMENTS
+  const testCard = el("testCard");
+  const testQuestionWord = el("testQuestionWord");
+  const testOptions = el("testOptions");
+  const testPrevBtn = el("testPrevBtn");
+  const testNextBtn = el("testNextBtn");
+  let testCardIndex = 0;
+
   function setOcrStatus(msg) { setText(ocrStatus, msg); }
   function setCreateStatus(msg) { setText(createStatus, msg); }
 
@@ -230,8 +238,10 @@ document.addEventListener("DOMContentLoaded", () => {
       [activeCards[i], activeCards[j]] = [activeCards[j], activeCards[i]];
     }
     cardIndex = 0;
+    testCardIndex = 0;
     renderCard();
     renderCardsList();
+    renderTestCard();
   }
 
   function setActiveChat(chat) {
@@ -243,6 +253,7 @@ document.addEventListener("DOMContentLoaded", () => {
       cardIndex = 0;
       renderCard();
       renderCardsList();
+      renderTestCard();
       return;
     }
     activeChatTitle.textContent = chat.title || "Untitled chat";
@@ -278,6 +289,72 @@ document.addEventListener("DOMContentLoaded", () => {
     frontText.textContent = c.en || "—";
     backText.textContent = c.uz || "—";
     exampleText.textContent = "";
+  }
+
+  function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  function renderTestCard() {
+    if (!testOptions) return;
+    testOptions.innerHTML = "";
+
+    if (!activeChat || !activeCards.length) {
+      if (testQuestionWord) testQuestionWord.textContent = "Start Scan First";
+      return;
+    }
+
+    // Safety check
+    if (testCardIndex >= activeCards.length) testCardIndex = 0;
+
+    const currentCard = activeCards[testCardIndex];
+    if (testQuestionWord) testQuestionWord.textContent = currentCard.uz || "---";
+
+    // Prepare options (Correct is English)
+    const correctAnswer = currentCard.en || "???";
+    let options = [correctAnswer];
+
+    // Get distractors (English words)
+    const pool = activeCards.filter(c => c.en !== correctAnswer && c.en);
+
+    if (pool.length < 2) {
+      if (pool.length === 0) options.push("Wrong 1", "Wrong 2");
+      else options.push(pool[0].en, "Wrong Option");
+    } else {
+      const shuffledPool = shuffleArray([...pool]);
+      options.push(shuffledPool[0].en);
+      options.push(shuffledPool[1].en);
+    }
+
+    // Shuffle options
+    options = shuffleArray(options);
+
+    options.forEach(opt => {
+      const btn = document.createElement("div");
+      btn.className = "quiz-btn";
+      btn.textContent = opt;
+      btn.onclick = () => {
+        // Prevent multi-click logic if needed, but for now allow re-clicking
+        Array.from(testOptions.children).forEach(b => {
+          b.classList.remove("correct", "wrong");
+        });
+
+        if (opt === correctAnswer) {
+          btn.classList.add("correct");
+        } else {
+          btn.classList.add("wrong");
+          // Reveal correct
+          Array.from(testOptions.children).forEach(b => {
+            if (b.textContent === correctAnswer) b.classList.add("correct");
+          });
+        }
+      };
+      testOptions.appendChild(btn);
+    });
   }
 
   function speakActiveWord() {
@@ -419,6 +496,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (prevBtn) prevBtn.addEventListener("click", () => { if (!activeCards.length) return; cardIndex = (cardIndex - 1 + activeCards.length) % activeCards.length; renderCard(); });
   if (nextBtn) nextBtn.addEventListener("click", () => { if (!activeCards.length) return; cardIndex = (cardIndex + 1) % activeCards.length; renderCard(); });
+
+  if (testPrevBtn) testPrevBtn.addEventListener("click", () => {
+    if (!activeCards.length) return;
+    testCardIndex = (testCardIndex - 1 + activeCards.length) % activeCards.length;
+    renderTestCard();
+  });
+  if (testNextBtn) testNextBtn.addEventListener("click", () => {
+    if (!activeCards.length) return;
+    testCardIndex = (testCardIndex + 1) % activeCards.length;
+    renderTestCard();
+  });
 
   (async () => {
     extractedWords = [];
