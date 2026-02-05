@@ -89,7 +89,16 @@ export default {
 async function translateWithGemini(text, apiKey) {
   if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
-  const models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-pro", "gemini-pro"];
+  const models = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.5-flash",
+    "gemini-exp-1206",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-001",
+    "gemini-1.5-pro",
+    "gemini-pro"
+  ];
   const prompt = `Translate to Uzbek. Return ONLY the translation. Text: "${text}"`;
 
   let lastError = "No models available";
@@ -142,7 +151,15 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
   // Vision models only (gemini-pro does not support images)
-  const models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-pro"];
+  const models = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.5-flash",
+    "gemini-exp-1206",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-001",
+    "gemini-1.5-pro"
+  ];
 
   let lastError = "No vision models available";
 

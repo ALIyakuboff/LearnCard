@@ -53,6 +53,10 @@ async function translateWithGemini(text, apiKey) {
     if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
     const models = [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
+        "gemini-2.5-flash",
+        "gemini-exp-1206",
         "gemini-1.5-flash",
         "gemini-1.5-flash-latest",
         "gemini-1.5-flash-001",
