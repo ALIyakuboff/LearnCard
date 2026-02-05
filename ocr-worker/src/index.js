@@ -9,168 +9,55 @@ export default {
       "Vary": "Origin",
     };
 
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, cors);
-
-    // 1. Check Content-Type to distinguish between JSON (Translate) and FormData (OCR)
-    const ct = request.headers.get("Content-Type") || "";
-
-    // --- TRANSLATE ACTION ---
-    if (ct.includes("application/json")) {
-      const rawBody = await request.text().catch(() => "");
-      let body = {};
-      try { body = JSON.parse(rawBody); } catch (e) {
-        return json({ error: "Invalid JSON", raw: rawBody.slice(0, 50) }, 400, cors);
-      }
-
-      if (body.action === "translate") {
-        const word = (body.word || body.text || "").trim();
-        if (!word) return json({ translated: "" }, 200, cors);
-
-        // Cache V6 (Gemini)
-        const cache = caches.default;
-        const cacheUrl = new URL(request.url);
-        cacheUrl.pathname = `/cache-gemini-v1/${encodeURIComponent(word.toLowerCase())}`;
-        const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-
-        const cachedRes = await cache.match(cacheKey);
-        if (cachedRes) return cachedRes;
-
-        const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
-        const response = json({ translated: translation }, 200, cors);
-
-        if (translation && !translation.startsWith("[")) {
-          response.headers.set("Cache-Control", "public, max-age=2592000"); // 30 kun
-          ctx.waitUntil(cache.put(cacheKey, response.clone()));
-        }
-        return response;
-      }
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: cors });
     }
 
-    // --- OCR ACTION (Gemini Vision) ---
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: cors });
+    }
+
     try {
-      const form = await request.formData();
-      const file = form.get("image");
-      if (!file) return json({ error: "No image provided" }, 400, cors);
+      const body = await request.json();
+      const { image, mimeType, word } = body;
 
-      const arrayBuffer = await file.arrayBuffer();
-      const base64Image = arrayBufferToBase64(arrayBuffer);
-      const mimeType = file.type || "image/jpeg";
+      if (word && !image) {
+        return json({ error: "[Error: Wrong Endpoint. You sent text to the OCR (Scanner) worker. Please use the Translate worker.]" }, 400, cors);
+      }
 
-      const text = await ocrWithGemini(base64Image, mimeType, env.GEMINI_API_KEY);
+      if (!image || !mimeType) {
+        return json({ error: "[OCR Error: Image data missing]" }, 400, cors);
+      }
 
-      // Extract words for frontend compatibility
-      const words = text.toLowerCase()
-        .replace(/[^a-z0-9'\s]/g, " ")
-        .split(/\s+/)
-        .filter(w => w.length >= 2)
-        .slice(0, 500);
+      // OCR Logic
+      const text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY);
 
-      return json({
-        text,
-        words: Array.from(new Set(words)),
-        pairs: [],
-        debug: { length: text.length, count: words.length }
-      }, 200, cors);
+      return json({ text }, 200, cors);
 
     } catch (e) {
-      console.error("OCR Worker Exception:", e);
-      return json({
-        error: "OCR Processor Error",
-        message: String(e.message || e),
-        model: "gemini-1.5-flash"
-      }, 500, cors);
+      return json({ error: e.message }, 500, cors);
     }
   },
 };
 
-// --- HELPER FUNCTIONS ---
-
-async function translateWithGemini(text, apiKey) {
-  if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
-
-  const models = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-2.5-flash",
-    "gemini-exp-1206",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-001",
-    "gemini-1.5-pro",
-    "gemini-pro"
-  ];
-  const prompt = `Translate to Uzbek. Return ONLY the translation. Text: "${text}"`;
-
-  let lastError = "No models available";
-
-  for (const model of models) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-
-      const data = await response.json();
-
-      if (data.error) {
-        if (
-          data.error.code === 404 ||
-          data.error.status === "NOT_FOUND" ||
-          data.error.code === 429 ||
-          data.error.status === "RESOURCE_EXHAUSTED" ||
-          data.error.message.toLowerCase().includes("quota")
-        ) {
-          lastError = `${model}: ${data.error.message}`;
-          continue;
-        }
-        return `[Error: ${data.error.message} (Model: ${model})]`;
-      }
-
-      const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (translatedText) return translatedText.trim();
-
-    } catch (e) {
-      lastError = e.message;
-    }
-  }
-  // If all failed, try to list available models to debug
-  try {
-    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    const listRes = await fetch(listUrl);
-    const listData = await listRes.json();
-
-    if (listData.models) {
-      const availableNames = listData.models.map(m => m.name.replace("models/", "")).join(", ");
-      return `[Error: Models not found. Available models for this key: ${availableNames}. Last Error: ${lastError}]`;
-    } else {
-      return `[Error: All models failed and ListModels failed. Last Error: ${lastError}. List Error: ${JSON.stringify(listData)}]`;
-    }
-  } catch (e) {
-    return `[Error: All models failed. Key validation failed. Last Error: ${lastError}]`;
-  }
-}
-
 async function ocrWithGemini(base64Image, mimeType, apiKey) {
-  if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+  if (!apiKey) throw new Error("API key missing");
 
   // Vision models only (gemini-pro does not support images)
   const models = [
     "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite-preview-09-2025",
+    "gemini-2.0-flash-lite",
     "gemini-2.5-flash",
     "gemini-exp-1206",
     "gemini-1.5-flash",
-    "gemini-1.5-flash-001",
     "gemini-1.5-pro"
   ];
 
-  let globalRetries = 1;
+  let lastError = "No vision models available";
+  let globalRetries = 2; // 3 total attempts
 
   while (globalRetries >= 0) {
-    lastError = "No vision models available";
 
     for (const model of models) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -194,17 +81,9 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 
         const data = await response.json();
         if (data.error) {
-          if (
-            data.error.code === 404 ||
-            data.error.status === "NOT_FOUND" ||
-            data.error.code === 429 ||
-            data.error.status === "RESOURCE_EXHAUSTED" ||
-            data.error.message.toLowerCase().includes("quota")
-          ) {
-            lastError = `${model}: ${data.error.message}`;
-            continue;
-          }
-          throw new Error(data.error.message);
+          // Failover
+          lastError = `${model}: ${data.error.message}`;
+          continue;
         }
 
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -215,10 +94,12 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
       }
     }
 
+    // Global retry logic with backoff
     if (globalRetries > 0) {
+      const delay = globalRetries === 2 ? 2000 : 4000;
       globalRetries--;
-      await new Promise(r => setTimeout(r, 2000));
-      continue;
+      await new Promise(r => setTimeout(r, delay));
+      continue; // Restart the model loop
     } else {
       break;
     }
@@ -228,20 +109,9 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 }
 
 
-
-function arrayBufferToBase64(buffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function json(payload, status, cors) {
+function json(payload, status, headers) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { ...cors, "Content-Type": "application/json" },
+    headers: { ...headers, "Content-Type": "application/json" },
   });
-} 
+}

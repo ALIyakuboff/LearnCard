@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const activeWorkerUrl = cfg.OCR_WORKER_URL || "";
   const activeTranslateUrl = cfg.TRANSLATE_WORKER_URL || "";
 
-  const GAS_TRANSLATE_URL = cfg.GAS_TRANSLATE_URL || "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+  const GAS_TRANSLATE_URL = cfg.GAS_TRANSLATE_URL || "";
 
   const el = (id) => document.getElementById(id);
   const setText = (node, text) => { if (node) node.textContent = text ?? ""; };
@@ -405,26 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
 
-          // Strategy 2: OCR Worker Fallback (Action: translate)
-          if (!success && activeWorkerUrl) {
-            try {
-              const resOcr = await fetch(activeWorkerUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "translate", word: w, gasUrl: GAS_TRANSLATE_URL })
-              });
-              const dataOcr = await resOcr.json().catch(() => ({}));
-              if (resOcr.ok && dataOcr.translated && !dataOcr.translated.startsWith("[")) {
-                translationResult = dataOcr.translated;
-                success = true;
-              } else {
-                translationResult = dataOcr.translated || dataOcr.error || `Error ${resOcr.status}`;
-              }
-            } catch (e) {
-              console.error(`OCR fallback error for ${w}:`, e);
-              translationResult = "Connection Error";
-            }
-          }
+
 
           if (success) {
             translations[w] = translationResult;
