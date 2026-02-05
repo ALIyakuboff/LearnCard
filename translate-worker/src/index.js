@@ -50,7 +50,7 @@ export default {
 };
 
 async function translateWithGemini(text, apiKey) {
-    if (!apiKey) return "[Error: GEMINI_API_KEY not set]";
+    if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
