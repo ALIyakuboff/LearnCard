@@ -89,7 +89,7 @@ export default {
 async function translateWithGemini(text, apiKey) {
   if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`;
   const prompt = `Translate to Uzbek. Return ONLY the translation. Text: "${text}"`;
 
   try {
@@ -122,7 +122,7 @@ async function translateWithGemini(text, apiKey) {
 async function ocrWithGemini(base64Image, mimeType, apiKey) {
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`;
 
   const requestBody = {
     contents: [{
