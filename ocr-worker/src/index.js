@@ -121,7 +121,21 @@ async function translateWithGemini(text, apiKey) {
       lastError = e.message;
     }
   }
-  return `[Error: All models failed. Last: ${lastError}]`;
+  // If all failed, try to list available models to debug
+  try {
+    const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const listRes = await fetch(listUrl);
+    const listData = await listRes.json();
+
+    if (listData.models) {
+      const availableNames = listData.models.map(m => m.name.replace("models/", "")).join(", ");
+      return `[Error: Models not found. Available models for this key: ${availableNames}. Last Error: ${lastError}]`;
+    } else {
+      return `[Error: All models failed and ListModels failed. Last Error: ${lastError}. List Error: ${JSON.stringify(listData)}]`;
+    }
+  } catch (e) {
+    return `[Error: All models failed. Key validation failed. Last Error: ${lastError}]`;
+  }
 }
 
 async function ocrWithGemini(base64Image, mimeType, apiKey) {
