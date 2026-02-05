@@ -52,7 +52,13 @@ export default {
 async function translateWithGemini(text, apiKey) {
     if (!apiKey) return `[Error: Key missing. Type: ${typeof apiKey}]`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${apiKey}`;
+    const models = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ];
 
     const prompt = `
     Translate the following text to Uzbek.
@@ -64,34 +70,40 @@ async function translateWithGemini(text, apiKey) {
     5. Text to translate: "${text}"
     `;
 
-    try {
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
-        });
+    let lastError = "No models available";
 
-        const data = await response.json();
+    for (const model of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        if (data.error) {
-            return `[Error: ${data.error.message} (Code: ${data.error.code})]`;
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }]
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                // If 404 (Model not found), continue to next model
+                if (data.error.code === 404 || data.error.status === "NOT_FOUND") {
+                    lastError = `${model}: 404 Not Found`;
+                    continue;
+                }
+                return `[Error: ${data.error.message} (Model: ${model})]`;
+            }
+
+            const translatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (translatedText) return translatedText.trim();
+
+        } catch (e) {
+            lastError = e.message;
         }
-
-        const candidate = data?.candidates?.[0];
-        const translatedText = candidate?.content?.parts?.[0]?.text;
-
-        if (!translatedText) {
-            const blockReason = candidate?.finishReason || data?.promptFeedback?.blockReason || "UNKNOWN";
-            return `[Error: No translation. Reason: ${blockReason}. Raw: ${JSON.stringify(data).slice(0, 200)}...]`;
-        }
-
-        return translatedText.trim();
-
-    } catch (e) {
-        return `[Error: ${e.message}]`;
     }
+
+    return `[Error: All models failed. Last error: ${lastError}]`;
 }
 
 function json(payload, status, cors) {
