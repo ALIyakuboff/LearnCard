@@ -43,7 +43,7 @@ export default {
             return response;
 
         } catch (e) {
-            return json({ error: String(e.message) }, 500, cors);
+            return json({ translated: `[Error: Worker Crash - ${e.message}]` }, 200, cors);
         }
     },
 };
@@ -53,12 +53,9 @@ async function translateWithGemini(text, apiKey) {
 
     // Updated Model List including Lite models for speed/reliability
     const models = [
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite-preview-09-2025",
-        "gemini-2.0-flash-lite",
-        "gemini-2.5-flash",
         "gemini-1.5-flash",
-        "gemini-1.5-pro"
+        "gemini-1.5-pro",
+        "gemini-2.0-flash"
     ];
 
     // STRICT PROMPT for Dictionary-like quality

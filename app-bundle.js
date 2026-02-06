@@ -397,11 +397,26 @@ document.addEventListener("DOMContentLoaded", () => {
               if (res.ok && data.translated && !data.translated.startsWith("[")) {
                 translationResult = data.translated;
                 success = true;
-              } else if (res.status === 404) {
-                console.warn(`Translate worker 404: ${activeTranslateUrl}`);
+              } else {
+                console.warn(`Translate worker failed for ${w}, trying fallback...`);
               }
             } catch (e) {
               console.error(`Translate worker error for ${w}:`, e);
+            }
+          }
+
+          // Fallback: Google Apps Script (GAS)
+          if (!success && GAS_TRANSLATE_URL) {
+            try {
+              const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
+              const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`);
+              const data = await res.json().catch(() => ({}));
+              if (data.status === "success" && data.translatedText) {
+                translationResult = data.translatedText;
+                success = true;
+              }
+            } catch (e) {
+              console.error(`GAS fallback error for ${w}:`, e);
             }
           }
 
