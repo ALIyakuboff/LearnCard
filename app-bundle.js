@@ -388,70 +388,68 @@ document.addEventListener("DOMContentLoaded", () => {
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        // PARALLEL BATCH PROCESSING (V13 - Speed Optimized)
-        const BATCH_SIZE = 6;
+        // PARALLEL BATCH PROCESSING (V14 - True Batching)
+        const BATCH_SIZE = 15; // Increased batch size for efficiency
         let processedCount = 0;
 
         for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
           const batch = wordsToQuery.slice(i, i + BATCH_SIZE);
 
-          await Promise.all(batch.map(async (w) => {
-            let translationResult = "";
-            let success = false;
-            let workerError = null;
-
-            // Strategy 1: Dedicated Translation Worker
+          try {
+            // Strategy 1: Dedicated Translation Worker with Batch Support
             if (activeTranslateUrl) {
-              try {
-                const res = await fetch(activeTranslateUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ word: w })
-                });
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && data.translated && !data.translated.startsWith("[")) {
-                  translationResult = data.translated;
-                  success = true;
-                } else {
-                  workerError = data.translated || `Worker Status ${res.status}`;
-                  // console.warn(`Translate worker failed for ${w}: ${workerError}`);
-                }
-              } catch (e) {
-                workerError = e.message;
-                // console.error(`Translate worker error for ${w}:`, e);
-              }
-            }
+              const res = await fetch(activeTranslateUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ words: batch })
+              });
+              const data = await res.json().catch(() => ({}));
 
-            // Fallback: Google Apps Script (GAS)
-            if (!success && GAS_TRANSLATE_URL) {
-              try {
-                const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
-                const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, {
-                  method: "GET",
-                  redirect: "follow"
+              if (res.ok && data.translated) {
+                // Success - data.translated is { "apple": "olma", ... }
+                Object.assign(translations, data.translated);
+                // Update map
+                Object.entries(data.translated).forEach(([k, v]) => translationMap.set(k, v));
+              } else {
+                // Worker error or partial failure, mark this batch as failed (or fallback?)
+                // For now, let's mark as error so user sees it.
+                batch.forEach(w => {
+                  if (!translations[w]) {
+                    translations[w] = "[Worker Error]";
+                    translationMap.set(w, "[Worker Error]");
+                  }
                 });
-                const data = await res.json().catch(() => ({}));
-                if (data.status === "success" && data.translatedText) {
-                  translationResult = data.translatedText;
-                  success = true;
-                }
-              } catch (e) {
-                // console.error(`GAS fallback error for ${w}:`, e);
               }
-            }
-
-            if (success) {
-              translations[w] = translationResult;
-              translationMap.set(w, translationResult);
+            } else if (GAS_TRANSLATE_URL) {
+              // Fallback to GAS if no worker URL (Slow, one by one)
+              await Promise.all(batch.map(async w => {
+                try {
+                  const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
+                  const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, { redirect: "follow" });
+                  const data = await res.json().catch(() => ({}));
+                  if (data.translatedText) {
+                    translations[w] = data.translatedText;
+                    translationMap.set(w, data.translatedText);
+                  } else {
+                    translations[w] = "[Gas Error]";
+                  }
+                } catch (e) {
+                  translations[w] = "[Gas Fail]";
+                }
+              }));
             } else {
-              const errorMsg = workerError ? `[Err: ${workerError}]` : "[Xatolik]";
-              translations[w] = errorMsg;
-              translationMap.set(w, errorMsg);
+              batch.forEach(w => translations[w] = "[No Config]");
             }
 
-            processedCount++;
-            setCreateStatus(`Tarjima: ${processedCount}/${wordsToQuery.length}`);
-          }));
+          } catch (e) {
+            console.error("Batch error:", e);
+            batch.forEach(w => {
+              if (!translations[w]) translations[w] = "[App Error]";
+            });
+          }
+
+          processedCount += batch.length;
+          setCreateStatus(`Tarjima: ${Math.min(processedCount, wordsToQuery.length)}/${wordsToQuery.length}`);
 
           renderWords(); // Update UI after each batch
         }
