@@ -133,8 +133,10 @@ async function translateWithGemini(text, apiKey) {
             const textBody = await gasRes.text();
             try {
                 const gasData = JSON.parse(textBody);
-                if (gasData.status === "success" && gasData.translatedText) {
-                    return gasData.translatedText;
+                // Support both standard and simplified format
+                const translatedText = gasData.translatedText || gasData.translated;
+                if (translatedText) {
+                    return translatedText;
                 } else {
                     lastError += ` | GAS Invalid JSON: ${textBody.substring(0, 50)}...`;
                 }
