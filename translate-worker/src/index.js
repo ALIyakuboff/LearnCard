@@ -11,8 +11,14 @@ export default {
 
         if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-        if (request.method !== "POST") {
-            return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: cors });
+        const url = new URL(request.url);
+
+        if (url.pathname === "/translate" || url.pathname === "/") { // Assuming / or /translate is for the main translation logic
+            if (request.method !== "POST") {
+                return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: cors });
+            }
+        } else {
+            return new Response(JSON.stringify({ error: "Not Found" }), { status: 404, headers: cors });
         }
 
         try {
@@ -30,7 +36,8 @@ export default {
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 
-                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY);
+                // Pass ctx and request for caching
+                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request);
                 return json({ translated: translations }, 200, cors);
             }
 
@@ -41,7 +48,7 @@ export default {
             // Cache Logic (Gemini V2) - Only for single words for now
             const cache = caches.default;
             const cacheUrl = new URL(request.url);
-            cacheUrl.pathname = `/translate-gemini-v2-robust/${encodeURIComponent(word.toLowerCase())}`;
+            cacheUrl.pathname = `/translate-gemini-v4-debug/${encodeURIComponent(word.toLowerCase())}`;
             const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
             const cachedRes = await cache.match(cacheKey);
@@ -63,31 +70,63 @@ export default {
     },
 };
 
-async function translateBatchWithGemini(words, apiKey) {
+async function translateBatchWithGemini(words, apiKey, ctx, request) {
     if (!apiKey) return {};
 
-    // Batch Prompt
+    const results = {};
+    const missingWords = [];
+    const cache = caches.default;
+    const origin = new URL(request.url).origin; // Use current origin for cache keys
+
+    // 1. Try to fetch from Cache first (Parallel)
+    await Promise.all(words.map(async (word) => {
+        try {
+            const cacheId = encodeURIComponent(word.toLowerCase());
+            const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+            // Create a consistent cache key
+            const cacheKey = new Request(cacheUrl, { method: "GET" });
+
+            const cachedRes = await cache.match(cacheKey);
+            if (cachedRes) {
+                const data = await cachedRes.json();
+                if (data.translated) {
+                    results[word] = data.translated;
+                    return;
+                }
+            }
+        } catch (e) {
+            // Ignore cache errors, proceed to fetch
+        }
+        missingWords.push(word);
+    }));
+
+    if (missingWords.length === 0) {
+        return results;
+    }
+
+    // 2. Fetch missing words from Gemini
+    // Batch Prompt for missing words only
     const prompt = `
     You are a professional English-Uzbek dictionary.
     Translate the following list of words to Uzbek.
     Return ONLY a valid JSON object where keys are the English words and values are the Uzbek translations.
     
     Words to translate:
-    ${JSON.stringify(words)}
+    ${JSON.stringify(missingWords)}
 
     Rules:
-    1. Output strictly valid JSON. No markdown code blocks (like \`\`\`json).
+    1. Output strictly valid JSON. No markdown code blocks.
     2. No explanations.
-    3. If a word has multiple meanings, choose the most common/scientific one.
-    4. Example output format: { "apple": "olma", "run": "yugurmoq" }
+    3. IMPORTANT: If a word has multiple meanings (e.g. noun vs verb, or different concepts), you MUST provide 1 to 3 distinct meanings, separated by commas.
+    4. Example output: { "apple": "olma", "right": "o'ng, to'g'ri, huquq", "bank": "bank, qirg'oq" }
     `;
 
-    const models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-pro", "gemini-pro"];
-    let lastError = "";
+    const models = ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"];
+    let fetchedTranslations = null;
 
     for (const model of models) {
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
             const response = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -102,35 +141,64 @@ async function translateBatchWithGemini(words, apiKey) {
 
             // Clean markdown if present
             text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-
-            try {
-                const jsonMap = JSON.parse(text);
-                return jsonMap;
-            } catch (jsonErr) {
-                console.error(`Batch JSON Parse Error (${model}):`, text);
-                continue; // Try next model if JSON is bad
-            }
+            fetchedTranslations = JSON.parse(text);
+            break; // Success
 
         } catch (e) {
             console.error(`Batch Error (${model}):`, e.message);
-            lastError = `${model}: ${e.message}`;
         }
     }
 
-    // Fallback: Return empty object or error indicators? 
-    // For batch, let's return partials or empty so frontend can fallback/retry if needed?
-    // Actually, let's return a map where all values are error messages if it fails completely.
-    // Fallback: Try single word translation using ONLY GAS to save subrequests
-    const results = {};
-    for (const w of words) {
-        // Direct GAS call - 1 subrequest per word
-        const gasRes = await translateWithGas(w);
-        if (gasRes.success) {
-            results[w] = gasRes.text;
-        } else {
-            results[w] = `[Error: Fallback Failed - ${gasRes.error}]`;
+    // 3. Process results and Update Cache
+    if (fetchedTranslations) {
+        Object.assign(results, fetchedTranslations);
+
+        // Store NEW translations in cache individually
+        // This allows them to be hit by single-word requests later too!
+        for (const [word, translation] of Object.entries(fetchedTranslations)) {
+            try {
+                if (translation && typeof translation === 'string' && !translation.startsWith("[")) {
+                    const cacheId = encodeURIComponent(word.toLowerCase());
+                    const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+                    const cacheKey = new Request(cacheUrl, { method: "GET" });
+
+                    const responseToCache = new Response(JSON.stringify({ translated: translation }), {
+                        status: 200,
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Cache-Control": "public, max-age=2592000" // 30 days
+                        }
+                    });
+
+                    ctx.waitUntil(cache.put(cacheKey, responseToCache));
+                }
+            } catch (e) {
+                console.error("Cache Put Error:", e);
+            }
+        }
+    } else {
+        // Fallback: Try single word GAS logic for remaining missing words
+        for (const w of missingWords) {
+            const gasRes = await translateWithGas(w);
+            if (gasRes.success) {
+                results[w] = gasRes.text;
+                // Optional: Cache GAS results too? Yes.
+                try {
+                    const cacheId = encodeURIComponent(w.toLowerCase());
+                    const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+                    const cacheKey = new Request(cacheUrl, { method: "GET" });
+                    const responseToCache = new Response(JSON.stringify({ translated: gasRes.text }), {
+                        status: 200,
+                        headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" } // 1 day for fallback
+                    });
+                    ctx.waitUntil(cache.put(cacheKey, responseToCache));
+                } catch (e) { }
+            } else {
+                results[w] = `[Error: Failed to translate]`;
+            }
         }
     }
+
     return results;
 }
 
@@ -140,9 +208,9 @@ async function translateWithGemini(text, apiKey) {
 
     // Updated Model List including Lite models for speed/reliability
     const models = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-001",
+        "gemini-2.0-flash",
         "gemini-1.5-pro",
+        "gemini-1.5-flash",
         "gemini-pro"
     ];
 
@@ -152,13 +220,15 @@ async function translateWithGemini(text, apiKey) {
     Translate the word or phrase: "${text}" to Uzbek.
     
     Rules:
-    1. Output ONLY the translation. No explanations, no "Here is the translation".
-    2. If it has multiple meanings, provide the most common/scientific one.
-    3. Do NOT transliterate if a proper Uzbek term exists.
-    4. Examples:
+    Rules:
+    1. Output ONLY the translation. No explanations.
+    2. IMPORTANT: If a word has multiple meanings (e.g. noun vs verb), you MUST provide 1 to 3 distinct meanings, separated by commas.
+    3. Examples:
        "science" -> "fan"
-       "cell" -> "hujayra"
-       "animals" -> "hayvonlar"
+       "right" -> "o'ng, to'g'ri, huquq"
+       "bank" -> "bank, qirg'oq"
+       "science" -> "fan"
+       "right" -> "o'ng, to'g'ri, huquq"
     `;
 
     // Increased retries to handle 3-4s rate limits
@@ -167,7 +237,7 @@ async function translateWithGemini(text, apiKey) {
 
     while (globalRetries >= 0) {
         for (const model of models) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
 
             try {
                 const response = await fetch(url, {
@@ -207,7 +277,7 @@ async function translateWithGemini(text, apiKey) {
 
     // If all Gemini models fail, try GAS Fallback
     const gasResult = await translateWithGas(text);
-    if (gasResult.success) return gasResult.text;
+    if (gasResult.success) return `${gasResult.text} [Gemini Error: ${lastError}]`;
 
     lastError += ` | ${gasResult.error}`;
     return `[Error: All models & Fallback failed. Last: ${lastError}]`;

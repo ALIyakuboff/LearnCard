@@ -390,8 +390,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (wordsToQuery.length > 0) {
         // PARALLEL BATCH PROCESSING (V15 - Safe Parallel Batching)
-        const BATCH_SIZE = 10; // Reduced to avoid Worker Subrequest Limit (50)
-        const MAX_CONCURRENT_BATCHES = 5; // Process 5 batches at once for speed
+        // Optimization: Increased to 25 since Worker now supports efficient caching and batching
+        const BATCH_SIZE = 25;
+        const MAX_CONCURRENT_BATCHES = 4; // 25 * 4 = 100 words in flight
 
         const allBatches = [];
         for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
@@ -399,6 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         let processedCount = 0;
+        let errorCount = 0;
 
         // Function to process a single batch
         const processBatch = async (batch) => {
@@ -417,8 +419,9 @@ document.addEventListener("DOMContentLoaded", () => {
               } else {
                 batch.forEach(w => {
                   if (!translations[w]) {
-                    translations[w] = "[Worker Error]";
-                    translationMap.set(w, "[Worker Error]");
+                    translations[w] = "[Error: Retry]"; // Clearer error message
+                    translationMap.set(w, null); // Don't cache error permanently so retry works
+                    errorCount++;
                   }
                 });
               }
@@ -432,10 +435,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     translations[w] = data.translatedText;
                     translationMap.set(w, data.translatedText);
                   } else {
-                    translations[w] = "[Gas Error]";
+                    // Silent fail or clear error
+                    translations[w] = "";
+                    errorCount++;
                   }
                 } catch (e) {
-                  translations[w] = "[Gas Fail]";
+                  translations[w] = "";
+                  errorCount++;
                 }
               }));
             } else {
@@ -445,11 +451,14 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Batch error:", e);
             batch.forEach(w => {
               if (!translations[w]) translations[w] = "[App Error]";
+              errorCount++;
             });
           }
 
           processedCount += batch.length;
-          setCreateStatus(`Tarjima qilinmoqda: ${Math.min(processedCount, wordsToQuery.length)}/${wordsToQuery.length}`);
+          // User requested format: "1,2,3... ta tarjima qilindi"
+          const currentCount = Math.min(processedCount, wordsToQuery.length);
+          setCreateStatus(`${currentCount} ta so‘z tarjima qilindi... (${wordsToQuery.length} tadan)`);
           renderWords();
         };
 
@@ -457,6 +466,12 @@ document.addEventListener("DOMContentLoaded", () => {
         for (let i = 0; i < allBatches.length; i += MAX_CONCURRENT_BATCHES) {
           const chunk = allBatches.slice(i, i + MAX_CONCURRENT_BATCHES);
           await Promise.all(chunk.map(batch => processBatch(batch)));
+        }
+
+        if (errorCount > 0) {
+          setCreateStatus(`Tayyor (⚠️ ${errorCount} ta xato). "Create Chat" ni qayta bosing (xatolar qayta uriniladi).`);
+        } else {
+          setCreateStatus(`✅ Tayyor. Chat yaratildi (${words.length} ta so‘z).`);
         }
       }
 
