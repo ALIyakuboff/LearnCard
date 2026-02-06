@@ -99,10 +99,17 @@ body {
 
 .brand-phone {
   font-size: 11px;
-  color: var(--muted);
+  color: #fff;
   font-weight: 500;
   margin-top: 2px;
   letter-spacing: 0.5px;
+  text-decoration: none;
+  opacity: 0.9;
+  transition: opacity 0.2s;
+}
+
+.brand-phone:hover {
+  opacity: 1;
 }
 
 h1 {
