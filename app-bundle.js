@@ -389,15 +389,20 @@ document.addEventListener("DOMContentLoaded", () => {
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        // PARALLEL BATCH PROCESSING (V14 - True Batching)
-        const BATCH_SIZE = 50; // Increased batch size for efficiency
+        // PARALLEL BATCH PROCESSING (V15 - Safe Parallel Batching)
+        const BATCH_SIZE = 10; // Reduced to avoid Worker Subrequest Limit (50)
+        const MAX_CONCURRENT_BATCHES = 5; // Process 5 batches at once for speed
+
+        const allBatches = [];
+        for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
+          allBatches.push(wordsToQuery.slice(i, i + BATCH_SIZE));
+        }
+
         let processedCount = 0;
 
-        for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
-          const batch = wordsToQuery.slice(i, i + BATCH_SIZE);
-
+        // Function to process a single batch
+        const processBatch = async (batch) => {
           try {
-            // Strategy 1: Dedicated Translation Worker with Batch Support
             if (activeTranslateUrl) {
               const res = await fetch(activeTranslateUrl, {
                 method: "POST",
@@ -407,13 +412,9 @@ document.addEventListener("DOMContentLoaded", () => {
               const data = await res.json().catch(() => ({}));
 
               if (res.ok && data.translated) {
-                // Success - data.translated is { "apple": "olma", ... }
                 Object.assign(translations, data.translated);
-                // Update map
                 Object.entries(data.translated).forEach(([k, v]) => translationMap.set(k, v));
               } else {
-                // Worker error or partial failure, mark this batch as failed (or fallback?)
-                // For now, let's mark as error so user sees it.
                 batch.forEach(w => {
                   if (!translations[w]) {
                     translations[w] = "[Worker Error]";
@@ -422,7 +423,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
               }
             } else if (GAS_TRANSLATE_URL) {
-              // Fallback to GAS if no worker URL (Slow, one by one)
               await Promise.all(batch.map(async w => {
                 try {
                   const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
@@ -441,7 +441,6 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
               batch.forEach(w => translations[w] = "[No Config]");
             }
-
           } catch (e) {
             console.error("Batch error:", e);
             batch.forEach(w => {
@@ -451,8 +450,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
           processedCount += batch.length;
           setCreateStatus(`Tarjima: ${Math.min(processedCount, wordsToQuery.length)}/${wordsToQuery.length}`);
+          renderWords();
+        };
 
-          renderWords(); // Update UI after each batch
+        // Execute batches with concurrency limit
+        for (let i = 0; i < allBatches.length; i += MAX_CONCURRENT_BATCHES) {
+          const chunk = allBatches.slice(i, i + MAX_CONCURRENT_BATCHES);
+          await Promise.all(chunk.map(batch => processBatch(batch)));
         }
       }
 
