@@ -78,6 +78,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
   }
 
+  const STOP_WORDS = new Set([
+    "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+    "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there",
+    "their", "what", "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no",
+    "just", "him", "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then",
+    "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first", "well",
+    "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us", "are"
+  ]);
+
   function extractWordsFromText(text) {
     const raw = (text || "").toLowerCase();
     const parts = raw.split(/[\s\n\r\t]+/g);
@@ -87,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const w = normalizeWord(p);
       if (!w) continue;
       if (w.length < 3) continue;
+      if (STOP_WORDS.has(w)) continue; // Filter stop words
       if (seen.has(w)) continue;
       seen.add(w);
       out.push(w);
@@ -378,70 +388,72 @@ document.addEventListener("DOMContentLoaded", () => {
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
       if (wordsToQuery.length > 0) {
-        // SEQUENTIAL STABILITY PROTOCOL (V12)
-        let processed = 0;
-        for (const w of wordsToQuery) {
-          setCreateStatus(`Tarjima: ${processed + 1}/${wordsToQuery.length} (${w})`);
-          let translationResult = "";
-          let success = false;
+        // PARALLEL BATCH PROCESSING (V13 - Speed Optimized)
+        const BATCH_SIZE = 6;
+        let processedCount = 0;
 
-          let workerError = null;
+        for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
+          const batch = wordsToQuery.slice(i, i + BATCH_SIZE);
 
-          // Strategy 1: Dedicated Translation Worker
-          if (activeTranslateUrl) {
-            try {
-              const res = await fetch(activeTranslateUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ word: w })
-              });
-              const data = await res.json().catch(() => ({}));
-              if (res.ok && data.translated && !data.translated.startsWith("[")) {
-                translationResult = data.translated;
-                success = true;
-              } else {
-                workerError = data.translated || `Worker Status ${res.status}`;
-                console.warn(`Translate worker failed for ${w}: ${workerError}`);
+          await Promise.all(batch.map(async (w) => {
+            let translationResult = "";
+            let success = false;
+            let workerError = null;
+
+            // Strategy 1: Dedicated Translation Worker
+            if (activeTranslateUrl) {
+              try {
+                const res = await fetch(activeTranslateUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ word: w })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.translated && !data.translated.startsWith("[")) {
+                  translationResult = data.translated;
+                  success = true;
+                } else {
+                  workerError = data.translated || `Worker Status ${res.status}`;
+                  // console.warn(`Translate worker failed for ${w}: ${workerError}`);
+                }
+              } catch (e) {
+                workerError = e.message;
+                // console.error(`Translate worker error for ${w}:`, e);
               }
-            } catch (e) {
-              workerError = e.message;
-              console.error(`Translate worker error for ${w}:`, e);
             }
-          }
 
-          // Fallback: Google Apps Script (GAS)
-          if (!success && GAS_TRANSLATE_URL) {
-            try {
-              console.log("Attempting GAS Fallback...");
-              const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
-              const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, {
-                method: "GET",
-                redirect: "follow"
-              });
-              const data = await res.json().catch(() => ({}));
-              if (data.status === "success" && data.translatedText) {
-                translationResult = data.translatedText;
-                success = true;
-              } else {
-                console.warn("GAS Fallback response invalid:", data);
+            // Fallback: Google Apps Script (GAS)
+            if (!success && GAS_TRANSLATE_URL) {
+              try {
+                const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
+                const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, {
+                  method: "GET",
+                  redirect: "follow"
+                });
+                const data = await res.json().catch(() => ({}));
+                if (data.status === "success" && data.translatedText) {
+                  translationResult = data.translatedText;
+                  success = true;
+                }
+              } catch (e) {
+                // console.error(`GAS fallback error for ${w}:`, e);
               }
-            } catch (e) {
-              console.error(`GAS fallback error for ${w}:`, e);
             }
-          }
 
-          if (success) {
-            translations[w] = translationResult;
-            translationMap.set(w, translationResult);
-          } else {
-            const errorMsg = workerError ? `[Err: ${workerError}]` : "[Xatolik]";
-            translations[w] = errorMsg;
-            translationMap.set(w, errorMsg);
-          }
+            if (success) {
+              translations[w] = translationResult;
+              translationMap.set(w, translationResult);
+            } else {
+              const errorMsg = workerError ? `[Err: ${workerError}]` : "[Xatolik]";
+              translations[w] = errorMsg;
+              translationMap.set(w, errorMsg);
+            }
 
-          processed++;
-          renderWords(); // Real-time update
-          await new Promise(r => setTimeout(r, 150)); // ANTI-BURST
+            processedCount++;
+            setCreateStatus(`Tarjima: ${processedCount}/${wordsToQuery.length}`);
+          }));
+
+          renderWords(); // Update UI after each batch
         }
       }
 
