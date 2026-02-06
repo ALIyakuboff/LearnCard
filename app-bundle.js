@@ -390,9 +390,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (wordsToQuery.length > 0) {
         // PARALLEL BATCH PROCESSING (V15 - Safe Parallel Batching)
-        // Optimization: Increased to 25 since Worker now supports efficient caching and batching
-        const BATCH_SIZE = 25;
-        const MAX_CONCURRENT_BATCHES = 4; // 25 * 4 = 100 words in flight
+        // Optimization: Reduced to 10 because GAS fallback uses 2 subrequests per word (redirect). 
+        // 10 words = 20 subrequests (Safe). 25 words = 50 subrequests (Crash).
+        const BATCH_SIZE = 10;
+        const MAX_CONCURRENT_BATCHES = 3; // 10 * 3 = 30 words in flight
 
         const allBatches = [];
         for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {

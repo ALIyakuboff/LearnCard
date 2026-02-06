@@ -178,6 +178,15 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
         }
     } else {
         // Fallback: Try single word GAS logic for remaining missing words
+        // SAFETY: Only try fallback if we have enough subrequests left!
+        // GAS uses 2 subrequests per word. Limit is 50. 
+        if (missingWords.length > 15) {
+            for (const w of missingWords) {
+                results[w] = `[Error: Rate Limit - Too many words to fallback (${missingWords.length}). Retry this part.]`;
+            }
+            return results;
+        }
+
         for (const w of missingWords) {
             const gasRes = await translateWithGas(w);
             if (gasRes.success) {
@@ -194,7 +203,8 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
                     ctx.waitUntil(cache.put(cacheKey, responseToCache));
                 } catch (e) { }
             } else {
-                results[w] = `[Error: Failed to translate]`;
+                // Expose the error detail for debugging
+                results[w] = `[Error: Failed to translate - ${gasRes.error || "Unknown"}]`;
             }
         }
     }
