@@ -449,7 +449,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           processedCount += batch.length;
-          setCreateStatus(`Tarjima: ${Math.min(processedCount, wordsToQuery.length)}/${wordsToQuery.length}`);
+          setCreateStatus(`Tarjima qilinmoqda: ${Math.min(processedCount, wordsToQuery.length)}/${wordsToQuery.length}`);
           renderWords();
         };
 
