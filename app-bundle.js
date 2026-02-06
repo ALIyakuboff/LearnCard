@@ -385,6 +385,8 @@ document.addEventListener("DOMContentLoaded", () => {
           let translationResult = "";
           let success = false;
 
+          let workerError = null;
+
           // Strategy 1: Dedicated Translation Worker
           if (activeTranslateUrl) {
             try {
@@ -398,9 +400,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 translationResult = data.translated;
                 success = true;
               } else {
-                console.warn(`Translate worker failed for ${w}, trying fallback...`);
+                workerError = data.translated || `Worker Status ${res.status}`;
+                console.warn(`Translate worker failed for ${w}: ${workerError}`);
               }
             } catch (e) {
+              workerError = e.message;
               console.error(`Translate worker error for ${w}:`, e);
             }
           }
@@ -408,26 +412,31 @@ document.addEventListener("DOMContentLoaded", () => {
           // Fallback: Google Apps Script (GAS)
           if (!success && GAS_TRANSLATE_URL) {
             try {
+              console.log("Attempting GAS Fallback...");
               const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
-              const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`);
+              const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, {
+                method: "GET",
+                redirect: "follow"
+              });
               const data = await res.json().catch(() => ({}));
               if (data.status === "success" && data.translatedText) {
                 translationResult = data.translatedText;
                 success = true;
+              } else {
+                console.warn("GAS Fallback response invalid:", data);
               }
             } catch (e) {
               console.error(`GAS fallback error for ${w}:`, e);
             }
           }
 
-
-
           if (success) {
             translations[w] = translationResult;
             translationMap.set(w, translationResult);
           } else {
-            translations[w] = translationResult ? `[${translationResult}]` : "[Xatolik]";
-            translationMap.set(w, translations[w]);
+            const errorMsg = workerError ? `[Err: ${workerError}]` : "[Xatolik]";
+            translations[w] = errorMsg;
+            translationMap.set(w, errorMsg);
           }
 
           processed++;
