@@ -75,6 +75,7 @@ async function translateWithGemini(text, apiKey) {
 
     // Increased retries to handle 3-4s rate limits
     let globalRetries = 2; // 3 total attempts (Initial + 2 Retries)
+    let lastError = "Unknown error";
 
     while (globalRetries >= 0) {
         for (const model of models) {
@@ -92,7 +93,8 @@ async function translateWithGemini(text, apiKey) {
                 const data = await response.json();
 
                 if (data.error) {
-                    // Failover on any error
+                    lastError = `${model}: ${data.error.message || JSON.stringify(data.error)}`;
+                    console.error("Gemini Error:", lastError);
                     continue;
                 }
 
@@ -100,6 +102,7 @@ async function translateWithGemini(text, apiKey) {
                 if (translatedText) return translatedText.trim();
 
             } catch (e) {
+                lastError = `${model}: ${e.message}`;
                 // Network error, try next model
             }
         }
@@ -114,7 +117,36 @@ async function translateWithGemini(text, apiKey) {
         }
     }
 
-    return "[Error: Translation failed - Try again later]";
+    // If all Gemini models fail, try GAS Fallback (Server-to-Server, no CORS)
+    try {
+        const gasUrl = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
+        const params = new URLSearchParams({ q: text, source: "en", target: "uz" });
+        const gasRes = await fetch(`${gasUrl}?${params}`, {
+            method: "GET",
+            headers: { "User-Agent": "Mozilla/5.0 (Worker)" },
+            redirect: "follow"
+        });
+
+        if (!gasRes.ok) {
+            lastError += ` | GAS HTTP Error: ${gasRes.status}`;
+        } else {
+            const textBody = await gasRes.text();
+            try {
+                const gasData = JSON.parse(textBody);
+                if (gasData.status === "success" && gasData.translatedText) {
+                    return gasData.translatedText;
+                } else {
+                    lastError += ` | GAS Invalid JSON: ${textBody.substring(0, 50)}...`;
+                }
+            } catch (jsonErr) {
+                lastError += ` | GAS Parse Error: ${jsonErr.message} Body: ${textBody.substring(0, 50)}...`;
+            }
+        }
+    } catch (e) {
+        lastError += ` | GAS Error: ${e.message}`;
+    }
+
+    return `[Error: All models & Fallback failed. Last: ${lastError}]`;
 }
 
 function json(payload, status, cors) {
