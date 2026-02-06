@@ -82,7 +82,8 @@ async function translateBatchWithGemini(words, apiKey) {
     4. Example output format: { "apple": "olma", "run": "yugurmoq" }
     `;
 
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-pro", "gemini-pro"];
+    let lastError = "";
 
     for (const model of models) {
         try {
@@ -112,15 +113,25 @@ async function translateBatchWithGemini(words, apiKey) {
 
         } catch (e) {
             console.error(`Batch Error (${model}):`, e.message);
+            lastError = `${model}: ${e.message}`;
         }
     }
 
     // Fallback: Return empty object or error indicators? 
     // For batch, let's return partials or empty so frontend can fallback/retry if needed?
     // Actually, let's return a map where all values are error messages if it fails completely.
-    const failureMap = {};
-    for (const w of words) failureMap[w] = "[Error: Batch Failed]";
-    return failureMap;
+    // Fallback: Try single word translation using ONLY GAS to save subrequests
+    const results = {};
+    for (const w of words) {
+        // Direct GAS call - 1 subrequest per word
+        const gasRes = await translateWithGas(w);
+        if (gasRes.success) {
+            results[w] = gasRes.text;
+        } else {
+            results[w] = `[Error: Fallback Failed - ${gasRes.error}]`;
+        }
+    }
+    return results;
 }
 
 
@@ -129,8 +140,10 @@ async function translateWithGemini(text, apiKey) {
 
     // Updated Model List including Lite models for speed/reliability
     const models = [
-        "gemini-2.0-flash",
-        "gemini-1.5-flash"
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-pro",
+        "gemini-pro"
     ];
 
     // STRICT PROMPT for Dictionary-like quality
@@ -192,7 +205,15 @@ async function translateWithGemini(text, apiKey) {
         }
     }
 
-    // If all Gemini models fail, try GAS Fallback (Server-to-Server, no CORS)
+    // If all Gemini models fail, try GAS Fallback
+    const gasResult = await translateWithGas(text);
+    if (gasResult.success) return gasResult.text;
+
+    lastError += ` | ${gasResult.error}`;
+    return `[Error: All models & Fallback failed. Last: ${lastError}]`;
+}
+
+async function translateWithGas(text) {
     try {
         const gasUrl = "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec";
         const params = new URLSearchParams({ q: text, source: "en", target: "uz" });
@@ -203,27 +224,21 @@ async function translateWithGemini(text, apiKey) {
         });
 
         if (!gasRes.ok) {
-            lastError += ` | GAS HTTP Error: ${gasRes.status}`;
-        } else {
-            const textBody = await gasRes.text();
-            try {
-                const gasData = JSON.parse(textBody);
-                // Support both standard and simplified format
-                const translatedText = gasData.translatedText || gasData.translated;
-                if (translatedText) {
-                    return translatedText;
-                } else {
-                    lastError += ` | GAS Invalid JSON: ${textBody.substring(0, 50)}...`;
-                }
-            } catch (jsonErr) {
-                lastError += ` | GAS Parse Error: ${jsonErr.message} Body: ${textBody.substring(0, 50)}...`;
-            }
+            return { success: false, error: `GAS HTTP Error: ${gasRes.status}` };
+        }
+
+        const textBody = await gasRes.text();
+        try {
+            const gasData = JSON.parse(textBody);
+            const translatedText = gasData.translatedText || gasData.translated;
+            if (translatedText) return { success: true, text: translatedText };
+            return { success: false, error: `GAS Invalid JSON: ${textBody.substring(0, 50)}...` };
+        } catch (jsonErr) {
+            return { success: false, error: `GAS Parse Error: ${jsonErr.message}` };
         }
     } catch (e) {
-        lastError += ` | GAS Error: ${e.message}`;
+        return { success: false, error: `GAS Error: ${e.message}` };
     }
-
-    return `[Error: All models & Fallback failed. Last: ${lastError}]`;
 }
 
 function json(payload, status, cors) {

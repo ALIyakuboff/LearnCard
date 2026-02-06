@@ -84,7 +84,8 @@ document.addEventListener("DOMContentLoaded", () => {
     "their", "what", "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no",
     "just", "him", "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then",
     "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first", "well",
-    "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us", "are"
+    "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us", "are",
+    "isn't", "aren't", "doesn't", "don't", "won't", "didn't"
   ]);
 
   function extractWordsFromText(text) {
@@ -389,7 +390,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (wordsToQuery.length > 0) {
         // PARALLEL BATCH PROCESSING (V14 - True Batching)
-        const BATCH_SIZE = 15; // Increased batch size for efficiency
+        const BATCH_SIZE = 50; // Increased batch size for efficiency
         let processedCount = 0;
 
         for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
