@@ -32,7 +32,7 @@ export default {
                     .filter(w => w && typeof w === 'string')
                     .map(w => w.trim())
                     .filter(w => !IGNORED_WORDS.has(w.toLowerCase()))
-                    .slice(0, 50); // Limit batch size
+                    .slice(0, 1000); // Increased limit from 50 to 1000
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 

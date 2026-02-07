@@ -183,7 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       console.log("OCR Result:", text);
       const words = extractWordsFromText(text);
-      extractedWords = words.map(normalizeWord).filter(Boolean).slice(0, 150);
+      extractedWords = words.map(normalizeWord).filter(Boolean);
 
       translationMap = new Map();
       renderWords();
@@ -384,7 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       setCreateStatus("Tarjima qilinmoqda...");
       const title = safeTrim(chatTitle.value) || `Reading chat ${new Date().toLocaleString()}`;
-      const words = extractedWords.slice(0, 100);
+      const words = extractedWords;
       let translations = {};
       const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
 
