@@ -105,7 +105,53 @@ document.addEventListener("DOMContentLoaded", () => {
     return out;
   }
 
-  async function toSafeImageFile(originalFile, maxSide = 800, jpegQuality = 0.7) {
+  // PREPROCESSING FOR BETTER OCR
+  async function preprocessImageForOcr(imageFile) {
+    const img = new Image();
+    const url = URL.createObjectURL(imageFile);
+    try {
+      await new Promise((resolve) => { img.onload = resolve; img.src = url; });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Grayscale & Binarization (Thresholding)
+      // Simple threshold to boost contrast for text
+      const threshold = 128;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // Grayscale (luminance)
+        const gray = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+        // Binarize (Black or White) - "High Contrast"
+        // If it's light, make it white. If dark, make it black.
+        // Adding a slight "gamma" or dynamic adjustment could be better, but simple threshold works well for clear text.
+        const val = gray > 140 ? 255 : 0; // 140 is a bit safer than 128 for shadows
+
+        data[i] = val;
+        data[i + 1] = val;
+        data[i + 2] = val;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function toSafeImageFile(originalFile, maxSide = 1200, jpegQuality = 0.9) { // Increased quality default
     const img = new Image();
     const url = URL.createObjectURL(originalFile);
     try {
@@ -126,8 +172,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ctx.drawImage(img, 0, 0, nw, nh);
       const jpegBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", jpegQuality));
       if (jpegBlob) return new File([jpegBlob], "ocr.jpg", { type: "image/jpeg" });
-      const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      if (pngBlob) return new File([pngBlob], "ocr.png", { type: "image/png" });
       return originalFile;
     } finally {
       URL.revokeObjectURL(url);
@@ -162,17 +206,27 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!file) return;
     try {
       ocrUxShow();
-      ocrUxSetProgress(10, "Skaner tayyorlanmoqda...");
+      ocrUxSetProgress(10, "Rasm tozalanmoqda...");
+
+      // 1. Resize/Normalize first
+      let safeFile = await toSafeImageFile(file, 1500, 0.95); // High Res for processing
+
+      // 2. Preprocess (B&W Filter)
+      const processedBlob = await preprocessImageForOcr(safeFile);
+      const processedFile = new File([processedBlob], "processed.jpg", { type: "image/jpeg" });
+
+      ocrUxSetProgress(20, "Matn o‘qilmoqda (Tesseract)...");
 
       const worker = await Tesseract.createWorker('eng', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
-            ocrUxSetProgress(20 + Math.round(m.progress * 70), `Skanerlash: ${Math.round(m.progress * 100)}%`);
+            ocrUxSetProgress(30 + Math.round(m.progress * 60), `Skanerlash: ${Math.round(m.progress * 100)}%`);
           }
         }
       });
 
-      const { data: { text } } = await worker.recognize(file);
+      // Use the processed file!
+      const { data: { text } } = await worker.recognize(processedFile);
       await worker.terminate();
 
       if (!text || text.trim().length < 2) {
