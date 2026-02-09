@@ -30,7 +30,48 @@ export default {
       }
 
       // OCR Logic
-      const text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY);
+      let text;
+      try {
+        // RATE LIMIT CHECK (KV)
+        // 1. Check current usage for today
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const limitKey = `requests_${today}`;
+
+        let currentUsage = 0;
+        try {
+          const val = await env.OCR_LIMITS.get(limitKey);
+          currentUsage = val ? parseInt(val) : 0;
+        } catch (kvErr) {
+          // Ignore KV errors to avoid blocking service
+          console.error("KV Get Error:", kvErr);
+        }
+
+        // 2. If limit reached, Force Fallback (simulate quota error)
+        if (currentUsage >= 4000) {
+          throw new Error("429 Quota Exceeded (Internal Limit)");
+        }
+
+        // 3. Try Primary (Paid) Key
+        text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY);
+
+        // 4. Increment usage ONLY if successful
+        ctx.waitUntil(env.OCR_LIMITS.put(limitKey, (currentUsage + 1).toString()));
+
+      } catch (e) {
+        // 5. Check for Quota/Rate Limit Errors (Google or Internal)
+        const isQuotaError = e.message.includes("429") ||
+          e.message.includes("Quota") ||
+          e.message.includes("Resource has been exhausted");
+
+        if (isQuotaError && env.GEMINI_API_KEY_FREE) {
+          console.log("Primary Key Quota Exceeded. Switching to Free Key...");
+          // 6. Retry with Secondary (Free) Key
+          text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY_FREE);
+          text += " [Free Tier Backup]"; // Optional marker
+        } else {
+          throw e; // Re-throw if it's not a quota error or no free key
+        }
+      }
 
       return json({ text }, 200, cors);
 
@@ -45,13 +86,7 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 
   // Vision models only (gemini-pro does not support images)
   const models = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite-preview-09-2025",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-exp-1206",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro"
+    "gemini-1.5-flash", // Primary: Fast & Cheap
   ];
 
   let lastError = "No vision models available";

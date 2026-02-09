@@ -4,4 +4,6 @@ main = "src/index.js"
 compatibility_date = "2026-01-24"
 compatibility_flags = ["nodejs_compat"]
 
-
+[[kv_namespaces]]
+binding = "OCR_LIMITS"
+id = "39959b76a26bb91378f24590f4c7"
