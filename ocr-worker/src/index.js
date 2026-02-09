@@ -100,7 +100,18 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
       const requestBody = {
         contents: [{
           parts: [
-            { text: "Identify and list all English words visible in this image. Return just the words separated by spaces. Ignore non-text elements." },
+            {
+              text: `
+              Analyze this image and extract all legible English words.
+
+              Strict Guidelines:
+              1. Output ONLY the words, separated by spaces.
+              2. Correct any obvious OCR typos or spelling mistakes based on context (e.g. if you see "app1e", output "apple").
+              3. Ignore non-text elements, UI icons, page numbers, headers, footers, or battery/time indicators.
+              4. If text is cut off or illegible, ignore it.
+              5. Do not include punctuation like periods or commas in the final output, just words.
+              6. Convert all text to lowercase.
+            `},
             { inline_data: { mime_type: mimeType, data: base64Image } }
           ]
         }]

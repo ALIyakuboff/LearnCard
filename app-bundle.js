@@ -202,32 +202,80 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  async function runServerOcr(file) {
+    try {
+      if (!activeWorkerUrl) throw new Error("Server OCR URL not configured");
+
+      ocrUxShow();
+      ocrUxSetProgress(10, "Serverga yuklanmoqda...");
+
+      // Resize to reasonable size for API (max 1024x1024 is usually good for speed/cost, but 1500 is fine)
+      const safeFile = await toSafeImageFile(file, 1500, 0.85);
+
+      const arrayBuffer = await safeFile.arrayBuffer();
+      const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+
+      ocrUxSetProgress(40, "Sun'iy intellekt tahlil qilmoqda...");
+
+      const res = await fetch(activeWorkerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: base64,
+          mimeType: safeFile.type || "image/jpeg"
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Server Error ${res.status}`);
+      }
+
+      if (!data.text || data.text.length < 2) {
+        throw new Error("Server topilmadi");
+      }
+
+      return data.text;
+
+    } catch (e) {
+      console.warn("Server OCR Failed, switching to Client:", e);
+      return null; // Signal failure to fallback
+    }
+  }
+
   async function runClientOcr(file) {
     if (!file) return;
     try {
       ocrUxShow();
-      ocrUxSetProgress(10, "Rasm tozalanmoqda...");
+      setOcrStatus("Skanerlash boshlanmoqda...");
 
-      // 1. Resize/Normalize first
-      let safeFile = await toSafeImageFile(file, 1500, 0.95); // High Res for processing
+      // 1. Try Server OCR First
+      const serverText = await runServerOcr(file);
 
-      // 2. Preprocess (B&W Filter)
-      const processedBlob = await preprocessImageForOcr(safeFile);
-      const processedFile = new File([processedBlob], "processed.jpg", { type: "image/jpeg" });
+      let text = serverText;
 
-      ocrUxSetProgress(20, "Matn o‘qilmoqda (Tesseract)...");
+      // 2. Fallback to Tesseract if Server failed
+      if (!text) {
+        ocrUxSetProgress(10, "Server ishlamadi. Telefon skaneri ishga tushmoqda...");
 
-      const worker = await Tesseract.createWorker('eng', 1, {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            ocrUxSetProgress(30 + Math.round(m.progress * 60), `Skanerlash: ${Math.round(m.progress * 100)}%`);
+        let safeFile = await toSafeImageFile(file, 1500, 0.95);
+        const processedBlob = await preprocessImageForOcr(safeFile);
+        const processedFile = new File([processedBlob], "processed.jpg", { type: "image/jpeg" });
+
+        ocrUxSetProgress(30, "Matn o‘qilmoqda (Tesseract)...");
+
+        const worker = await Tesseract.createWorker('eng', 1, {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              ocrUxSetProgress(30 + Math.round(m.progress * 60), `Skanerlash: ${Math.round(m.progress * 100)}%`);
+            }
           }
-        }
-      });
+        });
 
-      // Use the processed file!
-      const { data: { text } } = await worker.recognize(processedFile);
-      await worker.terminate();
+        const { data: { text: tesseractText } } = await worker.recognize(processedFile);
+        await worker.terminate();
+        text = tesseractText;
+      }
 
       if (!text || text.trim().length < 2) {
         setOcrStatus("⚠️ Matn topilmadi. Boshqa rasm bilan ko'ring.");
@@ -244,7 +292,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setOcrStatus(`Muvaffaqiyatli: ${extractedWords.length} ta so'z ajratildi.`);
       ocrUxSetProgress(100, "Tayyor!");
     } catch (e) {
-      console.error("Client OCR Error:", e);
+      console.error("OCR Error:", e);
       setOcrStatus(`Skanerlashda xato: ${e.message || e}`);
       ocrUxSetProgress(0, "Xato");
     } finally {

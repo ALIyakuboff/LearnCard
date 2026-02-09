@@ -187,7 +187,8 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
             return results;
         }
 
-        for (const w of missingWords) {
+        // PARALLEL GAS FALLBACK
+        await Promise.all(missingWords.map(async (w) => {
             const gasRes = await translateWithGas(w);
             if (gasRes.success) {
                 results[w] = gasRes.text;
@@ -206,7 +207,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
                 // Expose the error detail for debugging
                 results[w] = `[Error: Failed to translate - ${gasRes.error || "Unknown"}]`;
             }
-        }
+        }));
     }
 
     return results;

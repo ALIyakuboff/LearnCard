@@ -6,4 +6,4 @@ compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
 binding = "OCR_LIMITS"
-id = "39959b76a26bb91378f24590f4c7"
+id = "39959b76a262467bb91378f24590f4c7"
