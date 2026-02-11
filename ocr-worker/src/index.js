@@ -85,9 +85,9 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 
   // Vision models only (gemini-pro does not support images)
   const models = [
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b-latest"
+    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
   ];
 
   let lastError = "No vision models available";
@@ -96,8 +96,8 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
   while (globalRetries >= 0) {
 
     for (const model of models) {
-      // Use v1 for stability
-      const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+      // Revert to v1beta as v1 is failing for gemini-1.5-flash in some regions/configs
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [{
