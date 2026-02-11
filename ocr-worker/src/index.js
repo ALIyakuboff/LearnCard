@@ -86,7 +86,9 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 
   // Vision models only (gemini-pro does not support images)
   const models = [
-    "gemini-1.5-flash", // Primary: Fast & Cheap
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
   ];
 
   let lastError = "No vision models available";
@@ -95,7 +97,8 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
   while (globalRetries >= 0) {
 
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      // Switch from v1beta to v1 for stability
+      const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
 
       const requestBody = {
         contents: [{
@@ -123,7 +126,18 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody)
+          body: JSON.stringify({
+            ...requestBody,
+            safetySettings: [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ],
+            generationConfig: {
+              response_mime_type: "application/json"
+            }
+          })
         });
 
         const data = await response.json();
