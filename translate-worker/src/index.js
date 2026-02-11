@@ -140,7 +140,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     5. Example output: { "apple": "(n.) olma", "right": "(adj.) o'ng, to'g'ri; (n.) huquq", "bank": "(n.) bank, qirg'oq" }
     `;
 
-    const models = ["gemini-1.5-flash"];
+    const models = ["gemini-1.5-flash-latest", "gemini-1.5-flash"];
     const safetySettings = [
         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
         { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -282,7 +282,7 @@ async function translateWithGemini(text, apiKey, mode = "standard") {
 
     // Updated Model List including Lite models for speed/reliability
     // Updated Model List - Strictly Flash 1.5 as requested
-    const models = ["gemini-1.5-flash"];
+    const models = ["gemini-1.5-flash-latest", "gemini-1.5-flash"];
 
     // STRICT PROMPT for Dictionary-like quality
     const isIelts = mode === "ielts";

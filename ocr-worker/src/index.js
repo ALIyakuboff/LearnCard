@@ -85,6 +85,7 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
 
   // Vision models only (gemini-pro does not support images)
   const models = [
+    "gemini-1.5-flash-latest",
     "gemini-1.5-flash",
   ];
 
