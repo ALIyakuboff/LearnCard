@@ -122,20 +122,20 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     ${JSON.stringify(missingWords)}
 
     Rules:
-    1. Output strictly valid JSON. No markdown.
+    1. Output strictly valid JSON.
     2. Definitions MUST be in English.
     3. Keep definitions short and clear.
-    4. Example: { "ubiquitous": "present, appearing, or found everywhere", "resilient": "able to withstand or recover quickly from difficult conditions" }
+    4. Example output: { "ubiquitous": "present, appearing, or found everywhere", "resilient": "able to withstand or recover quickly from difficult conditions" }
     ` : `
     You are a professional English-Uzbek dictionary.
-    Translate the following list of words to Uzbek.
+    Translate the following list of words into Uzbek.
     Return ONLY a valid JSON object where keys are the English words and values are the Uzbek translations.
     
     Words to translate:
     ${JSON.stringify(missingWords)}
 
     Rules:
-    1. Output strictly valid JSON. No markdown code blocks.
+    1. Output strictly valid JSON. 
     2. No explanations.
     3. IMPORTANT: Provide 2 to 5 distinct meanings for each word if available.
     4. For each meaning, include the word category in brackets, e.g., (n.), (v.), (adj.).
@@ -143,6 +143,13 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     `;
 
     const models = ["gemini-1.5-flash"];
+    const safetySettings = [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+    ];
+
     let fetchedTranslations = null;
     let globalRetries = 2; // 3 total attempts
 
@@ -153,7 +160,13 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                 const response = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        safetySettings,
+                        generationConfig: {
+                            response_mime_type: "application/json"
+                        }
+                    })
                 });
 
                 const data = await response.json();
@@ -162,10 +175,20 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                 let text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (!text) continue;
 
-                // Clean markdown if present
-                text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-                fetchedTranslations = JSON.parse(text);
-                break; // Model Success
+                // Robust JSON extraction
+                try {
+                    const match = text.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        fetchedTranslations = JSON.parse(match[0]);
+                    } else {
+                        fetchedTranslations = JSON.parse(text);
+                    }
+                } catch (parseErr) {
+                    console.error("Parse Error:", parseErr.message, "Raw:", text.substring(0, 100));
+                    continue; // Try next model or retry
+                }
+
+                if (fetchedTranslations) break; // Model Success
 
             } catch (e) {
                 console.error(`Batch Error (${model}, R:${globalRetries}):`, e.message);
@@ -278,9 +301,15 @@ async function translateWithGemini(text, apiKey, mode = "standard") {
        "bank" -> "(n.) bank, qirg'oq"
     `;
 
-    // Increased retries to handle 3-4s rate limits
-    let globalRetries = 2; // 3 total attempts (Initial + 2 Retries)
+    // Global retry logic with backoff
+    let globalRetries = 2;
     let lastError = "Unknown error";
+    const safetySettings = [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+    ];
 
     while (globalRetries >= 0) {
         for (const model of models) {
@@ -291,7 +320,8 @@ async function translateWithGemini(text, apiKey, mode = "standard") {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }]
+                        contents: [{ parts: [{ text: prompt }] }],
+                        safetySettings
                     })
                 });
 
