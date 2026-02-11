@@ -212,7 +212,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ocrUxSetProgress(10, "Serverga yuklanmoqda...");
 
       // Resize to reasonable size for API (max 1024x1024 is usually good for speed/cost, but 1500 is fine)
-      const safeFile = await toSafeImageFile(file, 1500, 0.85);
+      // optimization: Increased to 2000px and 0.95 quality for better photo OCR
+      const safeFile = await toSafeImageFile(file, 2000, 0.95);
 
       const arrayBuffer = await safeFile.arrayBuffer();
       const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));

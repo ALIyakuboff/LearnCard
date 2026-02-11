@@ -108,7 +108,7 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
               1. Output ONLY a valid JSON Array of strings. Example: ["word1", "word2", "word3"]
               2. DO NOT include any markdown formatting like \`\`\`json or \`\`\`. Just the raw JSON array.
               3. DO NOT concatenate words. Keep them separate even if they are close (e.g. "hello", "world").
-              4. Prioritize separating words over fixing spelling.
+              4. Correct obvious OCR errors (e.g. '1' for 'l', '0' for 'O') and spelling mistakes based on English context.
               5. Ignore non-text elements, UI icons, page numbers, headers, footers.
               6. Convert all text to lowercase.
               7. Do not include punctuation like periods or commas within the words unless part of the word (like "don't").
