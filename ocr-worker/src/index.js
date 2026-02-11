@@ -2,11 +2,10 @@ export default {
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "*";
     const cors = {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Max-Age": "86400",
-      "Vary": "Origin",
     };
 
     if (request.method === "OPTIONS") {
