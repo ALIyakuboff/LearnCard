@@ -1,12 +1,10 @@
 export default {
     async fetch(request, env, ctx) {
-        const origin = request.headers.get("Origin") || "*";
         const cors = {
-            "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
             "Access-Control-Max-Age": "86400",
-            "Vary": "Origin",
         };
 
         if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -24,12 +22,7 @@ export default {
         try {
             const body = await request.json();
 
-            const IGNORED_WORDS = new Set([
-                "am", "is", "are", "was", "were", "be", "been", "being",
-                "do", "does", "did",
-                "have", "has", "had",
-                "will", "shall", "would", "should", "can", "could", "may", "might", "must"
-            ]);
+            const IGNORED_WORDS = new Set([]); // Relaxed filter to avoid confusion
 
             // BATCH MODE
             if (body.words && Array.isArray(body.words)) {
@@ -41,8 +34,8 @@ export default {
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 
-                // Pass body.mode to handle IELTS definitions
-                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request, body.mode);
+                const mode = body.mode || "standard";
+                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request, mode);
                 return json({ translated: translations }, 200, cors);
             }
 
@@ -156,7 +149,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     while (globalRetries >= 0) {
         for (const model of models) {
             try {
-                const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
                 const response = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -321,7 +314,7 @@ async function translateWithGemini(text, apiKey, mode = "standard") {
 
     while (globalRetries >= 0) {
         for (const model of models) {
-            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
             try {
                 const response = await fetch(url, {
