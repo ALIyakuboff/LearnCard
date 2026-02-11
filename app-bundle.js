@@ -90,13 +90,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function extractWordsFromText(text) {
     const raw = (text || "").toLowerCase();
-    const parts = raw.split(/[\s\n\r\t]+/g);
+    // Improved splitting: split by whitespace AND punctuation (comma, dot, etc.)
+    // This fixes "hello,world" becoming "helloworld"
+    const parts = raw.split(/[\s,.;:()!?"'\[\]]+/g);
     const seen = new Set();
     const out = [];
     for (const p of parts) {
       const w = normalizeWord(p);
       if (!w) continue;
-      if (w.length < 3) continue;
+      if (w.length < 2) continue; // Allow 2 letter words like "is", "am"
       if (STOP_WORDS.has(w)) continue; // Filter stop words
       if (seen.has(w)) continue;
       seen.add(w);
@@ -231,11 +233,27 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data.error || `Server Error ${res.status}`);
       }
 
-      if (!data.text || data.text.length < 2) {
-        throw new Error("Server topilmadi");
+      // Check for JSON array in text field (since we updated worker to return stringified JSON)
+      if (data.text) {
+        try {
+          // Try parsing if it looks like JSON
+          if (data.text.trim().startsWith('[') && data.text.trim().endsWith(']')) {
+            const words = JSON.parse(data.text);
+            if (Array.isArray(words)) {
+              return words.join(" "); // Return joined string for consistent processing downstream
+            }
+          }
+        } catch (e) {
+          console.warn("Could not parse JSON from OCR, using raw text", e);
+        }
+
+        if (data.text.length < 2) {
+          throw new Error("Server topilmadi");
+        }
+        return data.text;
       }
 
-      return data.text;
+      throw new Error("Server topilmadi");
 
     } catch (e) {
       console.warn("Server OCR Failed, switching to Client:", e);

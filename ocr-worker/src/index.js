@@ -105,13 +105,13 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
               Analyze this image and extract all legible English words.
 
               Strict Guidelines:
-              1. Output ONLY the words, separated by spaces or newlines.
-              2. DO NOT concatenate words. Keep them separate even if they are close (e.g. "hello world", NOT "helloworld").
-              3. Prioritize separating words over fixing spelling. Do not merge words to "fix" them.
-              4. Ignore non-text elements, UI icons, page numbers, headers, footers, or battery/time indicators.
-              5. If text is cut off or illegible, ignore it.
-              6. Do not include punctuation like periods or commas.
-              7. Convert all text to lowercase.
+              1. Output ONLY a valid JSON Array of strings. Example: ["word1", "word2", "word3"]
+              2. DO NOT include any markdown formatting like \`\`\`json or \`\`\`. Just the raw JSON array.
+              3. DO NOT concatenate words. Keep them separate even if they are close (e.g. "hello", "world").
+              4. Prioritize separating words over fixing spelling.
+              5. Ignore non-text elements, UI icons, page numbers, headers, footers.
+              6. Convert all text to lowercase.
+              7. Do not include punctuation like periods or commas within the words unless part of the word (like "don't").
             `},
             { inline_data: { mime_type: mimeType, data: base64Image } }
           ]
@@ -133,8 +133,12 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
           continue;
         }
 
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text.trim();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          // Clean up potential markdown formatting if Gemini ignores instructions
+          const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+          return cleanText;
+        }
 
       } catch (e) {
         lastError = e.message;
