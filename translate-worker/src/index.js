@@ -150,7 +150,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
         { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
     ];
 
-    let fetchedTranslations = null;
+    let lastError = "No translations fetched from Gemini.";
     let globalRetries = 2; // 3 total attempts
 
     while (globalRetries >= 0) {
@@ -167,10 +167,21 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                 });
 
                 const data = await response.json();
-                if (data.error) throw new Error(data.error.message);
+                if (data.error) {
+                    lastError = `${model} (R${globalRetries}): ${data.error.message}`;
+                    throw new Error(data.error.message);
+                }
+
+                if (!data.candidates || data.candidates.length === 0) {
+                    lastError = `${model} (R${globalRetries}): No candidates returned. FinishReason: ${data.promptFeedback?.blockReason || "Unknown"}`;
+                    continue;
+                }
 
                 let text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!text) continue;
+                if (!text) {
+                    lastError = `${model} (R${globalRetries}): Empty text in candidate.`;
+                    continue;
+                }
 
                 // Robust JSON extraction
                 try {
@@ -181,13 +192,15 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                         fetchedTranslations = JSON.parse(text);
                     }
                 } catch (parseErr) {
+                    lastError = `${model} (R${globalRetries}): JSON Parse Error. Raw text snippet: ${text.substring(0, 50)}`;
                     console.error("Parse Error:", parseErr.message, "Raw:", text.substring(0, 100));
-                    continue; // Try next model or retry
+                    continue;
                 }
 
-                if (fetchedTranslations) break; // Model Success
+                if (fetchedTranslations) break;
 
             } catch (e) {
+                lastError = `${model} (R${globalRetries}): ${e.message}`;
                 console.error(`Batch Error (${model}, R:${globalRetries}):`, e.message);
             }
         }
@@ -233,7 +246,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     } else {
         if (isIelts) {
             for (const w of missingWords) {
-                results[w] = `[Error: Definitions currently unavailable for this word. Retry.]`;
+                results[w] = `[Error: Definitions currently unavailable - ${lastError}]`;
             }
             return results;
         }
