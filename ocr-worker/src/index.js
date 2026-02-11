@@ -133,10 +133,7 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
               { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
               { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
               { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ],
-            generationConfig: {
-              response_mime_type: "application/json"
-            }
+            ]
           })
         });
 

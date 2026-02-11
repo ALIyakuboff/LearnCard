@@ -162,10 +162,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: prompt }] }],
-                        safetySettings,
-                        generationConfig: {
-                            response_mime_type: "application/json"
-                        }
+                        safetySettings
                     })
                 });
 
