@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const createChatBtn = el("createChatBtn");
   const createStatus = el("createStatus");
   const chatList = el("chatList");
+  const ieltsToggle = el("ieltsToggle");
 
   const activeChatTitle = el("activeChatTitle");
   const activeChatMeta = el("activeChatMeta");
@@ -73,6 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeChat = null;
   let activeCards = [];
   let cardIndex = 0;
+  let isIeltsMode = false;
 
   function normalizeWord(w) {
     return (w || "").trim().toLowerCase().replace(/[^a-z']/g, "");
@@ -531,7 +533,10 @@ document.addEventListener("DOMContentLoaded", () => {
               const res = await fetch(activeTranslateUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ words: batch })
+                body: JSON.stringify({
+                  words: batch,
+                  mode: isIeltsMode ? "ielts" : "standard"
+                })
               });
               const data = await res.json().catch(() => ({}));
 
@@ -643,6 +648,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   if (manualWord) manualWord.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addManualWordBtn?.click(); } });
+
+  if (ieltsToggle) {
+    ieltsToggle.addEventListener("click", () => {
+      isIeltsMode = !isIeltsMode;
+      ieltsToggle.classList.toggle("active", isIeltsMode);
+      setCreateStatus(isIeltsMode ? "IELTS Rejimi: English Definitions" : "");
+    });
+  }
+
   if (createChatBtn) createChatBtn.addEventListener("click", createChatFromWords);
 
   const handleSpeak = (e) => { e.stopPropagation(); speakActiveWord(); };

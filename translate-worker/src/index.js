@@ -24,7 +24,12 @@ export default {
         try {
             const body = await request.json();
 
-            const IGNORED_WORDS = new Set(["was", "were"]);
+            const IGNORED_WORDS = new Set([
+                "am", "is", "are", "was", "were", "be", "been", "being",
+                "do", "does", "did",
+                "have", "has", "had",
+                "will", "shall", "would", "should", "can", "could", "may", "might", "must"
+            ]);
 
             // BATCH MODE
             if (body.words && Array.isArray(body.words)) {
@@ -32,12 +37,12 @@ export default {
                     .filter(w => w && typeof w === 'string')
                     .map(w => w.trim())
                     .filter(w => !IGNORED_WORDS.has(w.toLowerCase()))
-                    .slice(0, 1000); // Increased limit from 50 to 1000
+                    .slice(0, 1000);
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 
-                // Pass ctx and request for caching
-                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request);
+                // Pass body.mode to handle IELTS definitions
+                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request, body.mode);
                 return json({ translated: translations }, 200, cors);
             }
 
@@ -45,16 +50,17 @@ export default {
             const word = (body.word || "").trim();
             if (!word || IGNORED_WORDS.has(word.toLowerCase())) return json({ translated: "" }, 200, cors);
 
-            // Cache Logic (Gemini V2) - Only for single words for now
+            const mode = body.mode || "standard";
+            // Cache Logic depends on mode too
             const cache = caches.default;
             const cacheUrl = new URL(request.url);
-            cacheUrl.pathname = `/translate-gemini-v4-debug/${encodeURIComponent(word.toLowerCase())}`;
+            cacheUrl.pathname = `/translate-v5-${mode}/${encodeURIComponent(word.toLowerCase())}`;
             const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
             const cachedRes = await cache.match(cacheKey);
             if (cachedRes) return cachedRes;
 
-            const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
+            const translation = await translateWithGemini(word, env.GEMINI_API_KEY, mode);
             const response = json({ translated: translation }, 200, cors);
 
             if (translation && !translation.startsWith("[")) {
@@ -70,7 +76,7 @@ export default {
     },
 };
 
-async function translateBatchWithGemini(words, apiKey, ctx, request) {
+async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "standard") {
     if (!apiKey) return {};
 
     const results = {};
@@ -82,7 +88,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
     await Promise.all(words.map(async (word) => {
         try {
             const cacheId = encodeURIComponent(word.toLowerCase());
-            const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+            const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
             // Create a consistent cache key
             const cacheKey = new Request(cacheUrl, { method: "GET" });
 
@@ -106,7 +112,21 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
 
     // 2. Fetch missing words from Gemini
     // Batch Prompt for missing words only
-    const prompt = `
+    const isIelts = mode === "ielts";
+    const prompt = isIelts ? `
+    You are a professional English dictionary for IELTS students.
+    For the following list of words, provide a concise English definition (meaning) for each.
+    Return ONLY a valid JSON object where keys are the English words and values are the English definitions.
+    
+    Words:
+    ${JSON.stringify(missingWords)}
+
+    Rules:
+    1. Output strictly valid JSON. No markdown.
+    2. Definitions MUST be in English.
+    3. Keep definitions short and clear.
+    4. Example: { "ubiquitous": "present, appearing, or found everywhere", "resilient": "able to withstand or recover quickly from difficult conditions" }
+    ` : `
     You are a professional English-Uzbek dictionary.
     Translate the following list of words to Uzbek.
     Return ONLY a valid JSON object where keys are the English words and values are the Uzbek translations.
@@ -215,7 +235,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
 }
 
 
-async function translateWithGemini(text, apiKey) {
+async function translateWithGemini(text, apiKey, mode = "standard") {
     if (!apiKey) return `[Error: Key missing]`;
 
     // Updated Model List including Lite models for speed/reliability
@@ -225,7 +245,16 @@ async function translateWithGemini(text, apiKey) {
     ];
 
     // STRICT PROMPT for Dictionary-like quality
-    const prompt = `
+    const isIelts = mode === "ielts";
+    const prompt = isIelts ? `
+    You are a professional English dictionary for IELTS students.
+    Provide a concise English definition (meaning) for the word: "${text}".
+    
+    Rules:
+    1. Output ONLY the English definition. No explanations.
+    2. Keep it short and clear.
+    3. Example: "present, appearing, or found everywhere"
+    ` : `
     You are a professional English-Uzbek dictionary.
     Translate the word or phrase: "${text}" to Uzbek.
     
