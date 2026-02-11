@@ -117,8 +117,9 @@ async function translateBatchWithGemini(words, apiKey, ctx, request) {
     Rules:
     1. Output strictly valid JSON. No markdown code blocks.
     2. No explanations.
-    3. IMPORTANT: If a word has multiple meanings (e.g. noun vs verb, or different concepts), you MUST provide 1 to 3 distinct meanings, separated by commas.
-    4. Example output: { "apple": "olma", "right": "o'ng, to'g'ri, huquq", "bank": "bank, qirg'oq" }
+    3. IMPORTANT: Provide 2 to 5 distinct meanings for each word if available.
+    4. For each meaning, include the word category in brackets, e.g., (n.), (v.), (adj.).
+    5. Example output: { "apple": "(n.) olma", "right": "(adj.) o'ng, to'g'ri; (n.) huquq", "bank": "(n.) bank, qirg'oq" }
     `;
 
     const models = ["gemini-1.5-flash"];
@@ -229,15 +230,13 @@ async function translateWithGemini(text, apiKey) {
     Translate the word or phrase: "${text}" to Uzbek.
     
     Rules:
-    Rules:
     1. Output ONLY the translation. No explanations.
-    2. IMPORTANT: If a word has multiple meanings (e.g. noun vs verb), you MUST provide 1 to 3 distinct meanings, separated by commas.
-    3. Examples:
-       "science" -> "fan"
-       "right" -> "o'ng, to'g'ri, huquq"
-       "bank" -> "bank, qirg'oq"
-       "science" -> "fan"
-       "right" -> "o'ng, to'g'ri, huquq"
+    2. IMPORTANT: Provide 2 to 5 distinct meanings if available.
+    3. For each meaning, include the word category in brackets, e.g., (n.), (v.), (adj.).
+    4. Examples:
+       "science" -> "(n.) fan"
+       "right" -> "(adj.) o'ng, to'g'ri; (n.) huquq"
+       "bank" -> "(n.) bank, qirg'oq"
     `;
 
     // Increased retries to handle 3-4s rate limits
