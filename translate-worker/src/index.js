@@ -144,29 +144,42 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
 
     const models = ["gemini-1.5-flash"];
     let fetchedTranslations = null;
+    let globalRetries = 2; // 3 total attempts
 
-    for (const model of models) {
-        try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            const response = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
+    while (globalRetries >= 0) {
+        for (const model of models) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
 
-            const data = await response.json();
-            if (data.error) throw new Error(data.error.message);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.message);
 
-            let text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!text) continue;
+                let text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!text) continue;
 
-            // Clean markdown if present
-            text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-            fetchedTranslations = JSON.parse(text);
-            break; // Success
+                // Clean markdown if present
+                text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+                fetchedTranslations = JSON.parse(text);
+                break; // Model Success
 
-        } catch (e) {
-            console.error(`Batch Error (${model}):`, e.message);
+            } catch (e) {
+                console.error(`Batch Error (${model}, R:${globalRetries}):`, e.message);
+            }
+        }
+
+        if (fetchedTranslations) break;
+
+        if (globalRetries > 0) {
+            const delay = globalRetries === 2 ? 1000 : 2000;
+            globalRetries--;
+            await new Promise(r => setTimeout(r, delay));
+        } else {
+            break;
         }
     }
 
@@ -213,7 +226,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                 // Optional: Cache GAS results too? Yes.
                 try {
                     const cacheId = encodeURIComponent(w.toLowerCase());
-                    const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+                    const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
                     const cacheKey = new Request(cacheUrl, { method: "GET" });
                     const responseToCache = new Response(JSON.stringify({ translated: gasRes.text }), {
                         status: 200,
