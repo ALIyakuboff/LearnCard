@@ -653,6 +653,11 @@ document.addEventListener("DOMContentLoaded", () => {
     ieltsToggle.addEventListener("click", () => {
       isIeltsMode = !isIeltsMode;
       ieltsToggle.classList.toggle("active", isIeltsMode);
+
+      // Clear local map to force fresh definitions/translations from server
+      translationMap = new Map();
+      renderWords();
+
       setCreateStatus(isIeltsMode ? "IELTS Rejimi: English Definitions" : "");
     });
   }

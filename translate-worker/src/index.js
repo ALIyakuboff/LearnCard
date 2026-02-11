@@ -180,7 +180,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
             try {
                 if (translation && typeof translation === 'string' && !translation.startsWith("[")) {
                     const cacheId = encodeURIComponent(word.toLowerCase());
-                    const cacheUrl = new URL(`/translate-gemini-v4-debug/${cacheId}`, origin).toString();
+                    const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
                     const cacheKey = new Request(cacheUrl, { method: "GET" });
 
                     const responseToCache = new Response(JSON.stringify({ translated: translation }), {
@@ -198,17 +198,14 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
             }
         }
     } else {
-        // Fallback: Try single word GAS logic for remaining missing words
-        // SAFETY: Only try fallback if we have enough subrequests left!
-        // GAS uses 2 subrequests per word. Limit is 50. 
-        if (missingWords.length > 15) {
+        if (isIelts) {
             for (const w of missingWords) {
-                results[w] = `[Error: Rate Limit - Too many words to fallback (${missingWords.length}). Retry this part.]`;
+                results[w] = `[Error: Definitions currently unavailable for this word. Retry.]`;
             }
             return results;
         }
 
-        // PARALLEL GAS FALLBACK
+        // PARALLEL GAS FALLBACK (Uzbek only)
         await Promise.all(missingWords.map(async (w) => {
             const gasRes = await translateWithGas(w);
             if (gasRes.success) {
