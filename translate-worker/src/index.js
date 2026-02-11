@@ -39,8 +39,7 @@ export default {
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 
-                const mode = body.mode || "standard";
-                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request, mode);
+                const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request);
                 return json({ translated: translations }, 200, cors);
             }
 
@@ -48,17 +47,7 @@ export default {
             const word = (body.word || "").trim();
             if (!word || IGNORED_WORDS.has(word.toLowerCase())) return json({ translated: "" }, 200, cors);
 
-            const mode = body.mode || "standard";
-            // Cache Logic depends on mode too
-            const cache = caches.default;
-            const cacheUrl = new URL(request.url);
-            cacheUrl.pathname = `/translate-v5-${mode}/${encodeURIComponent(word.toLowerCase())}`;
-            const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-
-            const cachedRes = await cache.match(cacheKey);
-            if (cachedRes) return cachedRes;
-
-            const translation = await translateWithGemini(word, env.GEMINI_API_KEY, mode);
+            const translation = await translateWithGemini(word, env.GEMINI_API_KEY);
             const response = json({ translated: translation }, 200, cors);
 
             if (translation && !translation.startsWith("[")) {
@@ -74,7 +63,7 @@ export default {
     },
 };
 
-async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "standard") {
+async function translateBatchWithGemini(words, apiKey, ctx, request) {
     if (!apiKey) return {};
 
     const results = {};
@@ -86,7 +75,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     await Promise.all(words.map(async (word) => {
         try {
             const cacheId = encodeURIComponent(word.toLowerCase());
-            const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
+            const cacheUrl = new URL(`/translate-v6/${cacheId}`, origin).toString();
             // Create a consistent cache key
             const cacheKey = new Request(cacheUrl, { method: "GET" });
 
@@ -110,21 +99,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
 
     // 2. Fetch missing words from Gemini
     // Batch Prompt for missing words only
-    const isIelts = mode === "ielts";
-    const prompt = isIelts ? `
-    You are a professional English dictionary for IELTS students.
-    For the following list of words, provide a concise English definition (meaning) for each.
-    Return ONLY a valid JSON object where keys are the English words and values are the English definitions.
-    
-    Words:
-    ${JSON.stringify(missingWords)}
-
-    Rules:
-    1. Output strictly valid JSON.
-    2. Definitions MUST be in English.
-    3. Keep definitions short and clear.
-    4. Example output: { "ubiquitous": "present, appearing, or found everywhere", "resilient": "able to withstand or recover quickly from difficult conditions" }
-    ` : `
+    const prompt = `
     You are a professional English-Uzbek dictionary.
     Translate the following list of words into Uzbek.
     Return ONLY a valid JSON object where keys are the English words and values are the Uzbek translations.
@@ -140,7 +115,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     5. Example output: { "apple": "(n.) olma", "right": "(adj.) o'ng, to'g'ri; (n.) huquq", "bank": "(n.) bank, qirg'oq" }
     `;
 
-    const models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-2.5-flash"];
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-latest"];
     const safetySettings = [
         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
         { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
@@ -155,7 +130,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
     while (globalRetries >= 0) {
         for (const model of models) {
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
                 const response = await fetch(url, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -225,7 +200,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
             try {
                 if (translation && typeof translation === 'string' && !translation.startsWith("[")) {
                     const cacheId = encodeURIComponent(word.toLowerCase());
-                    const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
+                    const cacheUrl = new URL(`/translate-v6/${cacheId}`, origin).toString();
                     const cacheKey = new Request(cacheUrl, { method: "GET" });
 
                     const responseToCache = new Response(JSON.stringify({ translated: translation }), {
@@ -243,13 +218,6 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
             }
         }
     } else {
-        if (isIelts) {
-            for (const w of missingWords) {
-                results[w] = `[Error: Definitions currently unavailable - ${lastError}]`;
-            }
-            return results;
-        }
-
         // PARALLEL GAS FALLBACK (Uzbek only)
         await Promise.all(missingWords.map(async (w) => {
             const gasRes = await translateWithGas(w);
@@ -258,7 +226,7 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
                 // Optional: Cache GAS results too? Yes.
                 try {
                     const cacheId = encodeURIComponent(w.toLowerCase());
-                    const cacheUrl = new URL(`/translate-v5-${mode}/${cacheId}`, origin).toString();
+                    const cacheUrl = new URL(`/translate-v6/${cacheId}`, origin).toString();
                     const cacheKey = new Request(cacheUrl, { method: "GET" });
                     const responseToCache = new Response(JSON.stringify({ translated: gasRes.text }), {
                         status: 200,
@@ -277,24 +245,12 @@ async function translateBatchWithGemini(words, apiKey, ctx, request, mode = "sta
 }
 
 
-async function translateWithGemini(text, apiKey, mode = "standard") {
+async function translateWithGemini(text, apiKey) {
     if (!apiKey) return `[Error: Key missing]`;
 
-    // Updated Model List including Lite models for speed/reliability
-    // Updated Model List - Strictly Flash 1.5 as requested
-    const models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-2.5-flash"];
+    const models = ["gemini-1.5-flash", "gemini-1.5-flash-latest"];
 
-    // STRICT PROMPT for Dictionary-like quality
-    const isIelts = mode === "ielts";
-    const prompt = isIelts ? `
-    You are a professional English dictionary for IELTS students.
-    Provide a concise English definition (meaning) for the word: "${text}".
-    
-    Rules:
-    1. Output ONLY the English definition. No explanations.
-    2. Keep it short and clear.
-    3. Example: "present, appearing, or found everywhere"
-    ` : `
+    const prompt = `
     You are a professional English-Uzbek dictionary.
     Translate the word or phrase: "${text}" to Uzbek.
     
@@ -320,7 +276,7 @@ async function translateWithGemini(text, apiKey, mode = "standard") {
 
     while (globalRetries >= 0) {
         for (const model of models) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
 
             try {
                 const response = await fetch(url, {
