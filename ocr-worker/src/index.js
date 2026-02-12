@@ -103,19 +103,31 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
           parts: [
             {
               text: `
-              Analyze this image and extract all legible English words.
+              You are an expert OCR engine specializing in English language learning materials.
+              
+              YOUR TASK: Extract all legible English words from this image.
+              
+              CRITICAL PROBLEMS TO SOLVE: 
+              1. FONT VARIATIONS: The image may use different fonts (serif, sans-serif, handwriting, decorative). You must be robust to these styles.
+                 - Distinguish similar characters (like 'l' vs '1' vs 'I') by using word context.
+              2. SPACING ISSUES: Standard OCR often reads "is it" as "isit", or "to do" as "todo".
+                 - YOU MUST FIX THIS.
 
-              Strict Guidelines:
-              1. Output ONLY a valid JSON Array of strings. Example: ["word1", "word2", "word3"]
-              2. DO NOT include any markdown formatting. Just the raw JSON array.
-              3. **CRITICAL:** Ignore words that are cut off at the edges of the image or partially visible.
-              4. **CRITICAL:** Ignore random letters, noise, or blurry text that is not a clear English word.
-              5. **CRITICAL:** DO NOT concatenate short words. "is it" must be ["is", "it"], NOT ["isit"].
-              6. Treat 2-letter words (is, am, to, in, at, on) as valid words if they are clear.
-              7. Correct obvious OCR errors (e.g. '1' for 'l', '0' for 'O') based on English context.
-              8. Ignore non-text elements, UI icons, page numbers, headers, footers.
-              9. Convert all text to lowercase.
-              10. Do not include punctuation within words unless part of the word (like "don't").
+              STEP-BY-STEP INSTRUCTION:
+              1. Scan the image for text, adapting to any font style used.
+              2. SELF-CORRECTION: Look at every word you found. 
+                 - If you see "isit", SPLIT it into "is", "it".
+                 - If you see "tome", SPLIT it into "to", "me".
+                 - If you see "gohome", SPLIT it into "go", "home".
+                 - Ask yourself: "Is this a real valid English word, or two words stuck together?"
+              3. Filter out noise (random letters, page numbers, UI icons).
+              4. Lowercase all words.
+              5. Output the final refined list as a JSON Array.
+
+              OUTPUT FORMAT:
+              - ONLY a valid JSON Array of strings.
+              - Example: ["is", "it", "time", "to", "go"]
+              - NO markdown formatting.
             `},
             { inline_data: { mime_type: mimeType, data: base64Image } }
           ]
