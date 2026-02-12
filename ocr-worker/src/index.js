@@ -46,7 +46,7 @@ export default {
         }
 
         // 2. If limit reached, Force Fallback (simulate quota error)
-        if (currentUsage >= 4000) {
+        if (currentUsage >= 5000) {
           throw new Error("429 Quota Exceeded (Internal Limit)");
         }
 

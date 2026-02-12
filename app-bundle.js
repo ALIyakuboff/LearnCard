@@ -57,13 +57,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ocrUx) return;
     ocrUx.classList.remove("hidden");
     if (ocrProgressBar) ocrProgressBar.style.width = "0%";
-    if (ocrProgressText) ocrProgressText.textContent = "Starting...";
+    if (ocrProgressText) ocrProgressText.textContent = "";
   }
   function ocrUxHide() { if (ocrUx) ocrUx.classList.add("hidden"); }
   function ocrUxSetProgress(pct, text) {
     const p = Math.max(0, Math.min(100, pct));
     if (ocrProgressBar) ocrProgressBar.style.width = `${p}%`;
-    if (ocrProgressText) ocrProgressText.textContent = text || `${p}%`;
+    if (ocrProgressText) ocrProgressText.textContent = "";
   }
 
   let extractedWords = [];
@@ -266,7 +266,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!file) return;
     try {
       ocrUxShow();
-      setOcrStatus("Skanerlash boshlanmoqda...");
+      setOcrStatus("");
 
       // 1. Try Server OCR First
       const serverText = await runServerOcr(file);
@@ -310,6 +310,9 @@ document.addEventListener("DOMContentLoaded", () => {
       renderWords();
       setOcrStatus(`Muvaffaqiyatli: ${extractedWords.length} ta so'z ajratildi.`);
       ocrUxSetProgress(100, "Tayyor!");
+
+      // Auto-fetch translations in background
+      prefetchTranslations(extractedWords);
     } catch (e) {
       console.error("OCR Error:", e);
       setOcrStatus(`Skanerlashda xato: ${e.message || e}`);
@@ -497,6 +500,67 @@ document.addEventListener("DOMContentLoaded", () => {
     utterance.rate = 0.9;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
+  }
+
+  async function prefetchTranslations(words) {
+    if (!words || !words.length) return;
+
+    const wordsToQuery = words.filter(w => !translationMap.has(w) || !translationMap.get(w));
+    if (wordsToQuery.length === 0) return;
+
+    console.log("Prefetching translations for:", wordsToQuery.length, "words");
+    // Optional status update
+    if (wordsToQuery.length > 5) {
+      setCreateStatus(`Orqa fonda tarjima qilinmoqda... (${wordsToQuery.length} ta)`);
+    }
+
+    const BATCH_SIZE = 10;
+    const MAX_CONCURRENT_BATCHES = 3;
+
+    const allBatches = [];
+    for (let i = 0; i < wordsToQuery.length; i += BATCH_SIZE) {
+      allBatches.push(wordsToQuery.slice(i, i + BATCH_SIZE));
+    }
+
+    const processBatch = async (batch) => {
+      try {
+        if (activeTranslateUrl) {
+          const res = await fetch(activeTranslateUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ words: batch })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.translated) {
+            Object.entries(data.translated).forEach(([k, v]) => {
+              if (v) translationMap.set(k, v);
+            });
+          }
+        } else if (GAS_TRANSLATE_URL) {
+          await Promise.all(batch.map(async w => {
+            try {
+              const params = new URLSearchParams({ q: w, source: "en", target: "uz" });
+              const res = await fetch(`${GAS_TRANSLATE_URL}?${params}`, { redirect: "follow" });
+              const data = await res.json().catch(() => ({}));
+              if (data.translatedText) {
+                translationMap.set(w, data.translatedText);
+              }
+            } catch (e) { }
+          }));
+        }
+        renderWords();
+      } catch (e) {
+        console.warn("Prefetch error:", e);
+      }
+    };
+
+    for (let i = 0; i < allBatches.length; i += MAX_CONCURRENT_BATCHES) {
+      const chunk = allBatches.slice(i, i + MAX_CONCURRENT_BATCHES);
+      await Promise.all(chunk.map(batch => processBatch(batch)));
+    }
+
+    setCreateStatus("");
+    renderWords();
   }
 
   async function createChatFromWords() {
