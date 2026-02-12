@@ -193,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const chip = document.createElement("div");
       chip.className = "chip";
       const trans = translationMap.get(w);
-      chip.textContent = trans ? `${w} (${trans})` : w;
+      chip.textContent = w;
       chip.title = "Bosib olib tashlang";
       chip.addEventListener("click", () => {
         extractedWords = extractedWords.filter((x) => x !== w);
@@ -511,7 +511,7 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("Prefetching translations for:", wordsToQuery.length, "words");
     // Optional status update
     if (wordsToQuery.length > 5) {
-      setCreateStatus(`Orqa fonda tarjima qilinmoqda... (${wordsToQuery.length} ta)`);
+      // setCreateStatus(`Orqa fonda tarjima qilinmoqda... (${wordsToQuery.length} ta)`);
     }
 
     const BATCH_SIZE = 10;
