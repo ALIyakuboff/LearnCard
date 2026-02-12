@@ -682,10 +682,71 @@ document.addEventListener("DOMContentLoaded", () => {
     } finally { createChatBtn.disabled = false; }
   }
 
+  // CROPPER LOGIC
+  let cropper = null;
+  const cropModal = el("cropModal");
+  const cropImage = el("cropImage");
+  const cancelCropBtn = el("cancelCropBtn");
+  const confirmCropBtn = el("confirmCropBtn");
+
+  function openCropModal(file) {
+    if (!cropModal || !cropImage) return;
+
+    const url = URL.createObjectURL(file);
+    cropImage.src = url;
+    cropModal.classList.remove("hidden"); // Remove 'hidden' class to show
+
+    // Destroy previous instance
+    if (cropper) cropper.destroy();
+
+    // Init Cropper
+    cropper = new Cropper(cropImage, {
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 0.9,
+      restore: false,
+      guides: true,
+      center: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  }
+
+  function closeCropModal() {
+    if (cropModal) cropModal.classList.add("hidden"); // Add 'hidden' class to hide
+    if (cropper) {
+      cropper.destroy();
+      cropper = null;
+    }
+    if (cropImage) cropImage.src = "";
+  }
+
   if (runOcrBtn) runOcrBtn.addEventListener("click", async () => {
     const file = imageInput?.files?.[0];
     if (!file) return setOcrStatus("Avval rasm tanlang.");
-    await runClientOcr(file);
+
+    // Open Modal instead of running OCR directly
+    openCropModal(file);
+  });
+
+  if (cancelCropBtn) cancelCropBtn.addEventListener("click", closeCropModal);
+
+  if (confirmCropBtn) confirmCropBtn.addEventListener("click", () => {
+    if (!cropper) return;
+
+    // Get cropped blob
+    cropper.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048 }).toBlob(async (blob) => {
+      if (!blob) return setOcrStatus("Qirqishda xatolik.");
+
+      closeCropModal();
+
+      // Convert blob to file object for runClientOcr (it expects a File usually, but Blob works too if treated right)
+      const file = new File([blob], "cropped.jpg", { type: "image/jpeg" });
+      await runClientOcr(file);
+
+    }, 'image/jpeg', 0.95);
   });
 
   if (clearScanBtn) clearScanBtn.addEventListener("click", () => {

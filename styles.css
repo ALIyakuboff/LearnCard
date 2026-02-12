@@ -666,3 +666,56 @@ h2 {
   height: auto;
   min-height: 400px;
 }
+
+/* CROP MODAL */
+.modal {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.85);
+  /* Darker overlay */
+  display: flex !important;
+  /* Force flex for centering */
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.modal.hidden {
+  display: none !important;
+}
+
+.modal-content {
+  background-color: #1e293b;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #4f46e5;
+  width: 100%;
+  max-width: 500px;
+  border-radius: 12px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  /* Prevent overflow on small screens */
+}
+
+.img-container {
+  width: 100%;
+  height: 300px;
+  /* Fixed height for cropper */
+  background: #000;
+  margin-top: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.img-container img {
+  max-width: 100%;
+  display: block;
+  /* Essential for CropperJS */
+}
