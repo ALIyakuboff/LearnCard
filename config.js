@@ -8,7 +8,8 @@ window.APP_CONFIG = {
   TRANSLATE_WORKER_URL: "https://learncard-translate.asdovasd446.workers.dev",
 
   // Eski GAS URL (Fallback sifatida qoladi)
-  GAS_TRANSLATE_URL: "https://script.google.com/macros/s/AKfycbwU25xoSCC38egP4KnblHvrW88gwJwi2kLEL9O7DDpsmOONBxd4KRi3EnY9xndBxmcS/exec",
+  // Eski GAS URL (Yashirildi - Worker ichida ishlaydi)
+  GAS_TRANSLATE_URL: "",
 
   BUILD: "2026-02-03-SINGLE-ACCOUNT-V1"
 };
