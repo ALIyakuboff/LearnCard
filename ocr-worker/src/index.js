@@ -45,31 +45,39 @@ export default {
           console.error("KV Get Error:", kvErr);
         }
 
-        // 2. If limit reached, Force Fallback (simulate quota error)
-        if (currentUsage >= 5000) {
-          throw new Error("429 Quota Exceeded (Internal Limit)");
+        // TIERED LOGIC (NEW)
+        // 0   - 100: Gemini 1.5 Pro (Paid)
+        // 101 - 150: Gemini 1.5 Pro (Free)
+        // 151 +    : Gemini 1.5 Flash (Paid - Cheaper)
+
+        let apiKey = env.GEMINI_API_KEY; // Default to Paid
+        let model = "gemini-1.5-pro";    // Default to Pro
+
+        if (currentUsage < 100) {
+          // Case 1: 0-100 (Paid Pro)
+          apiKey = env.GEMINI_API_KEY;
+          model = "gemini-1.5-pro";
+        } else if (currentUsage >= 100 && currentUsage < 150) {
+          // Case 2: 101-150 (Free Pro)
+          apiKey = env.GEMINI_API_KEY_FREE;
+          model = "gemini-1.5-pro";
+        } else {
+          // Case 3: 151+ (Paid Flash - 10x Cheaper)
+          apiKey = env.GEMINI_API_KEY;
+          model = "gemini-1.5-flash";
         }
 
-        // 3. Try Primary (Paid) Key
-        text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY);
+        // 3. Try Selected Key & Model
+        text = await ocrWithGemini(image, mimeType, apiKey, model);
 
         // 4. Increment usage ONLY if successful
         ctx.waitUntil(env.OCR_LIMITS.put(limitKey, (currentUsage + 1).toString()));
 
       } catch (e) {
-        // 5. Check for Quota/Rate Limit Errors (Google or Internal)
-        const isQuotaError = e.message.includes("429") ||
-          e.message.includes("Quota") ||
-          e.message.includes("Resource has been exhausted");
-
-        if (isQuotaError && env.GEMINI_API_KEY_FREE) {
-          console.log("Primary Key Quota Exceeded. Switching to Free Key...");
-          // 6. Retry with Secondary (Free) Key
-          text = await ocrWithGemini(image, mimeType, env.GEMINI_API_KEY_FREE);
-          text += " [Free Tier Backup]"; // Optional marker
-        } else {
-          throw e; // Re-throw if it's not a quota error or no free key
-        }
+        // 5. Fallback Logic (Only for Paid Pro -> Flash if Pro fails, or Free -> Paid if Free fails?)
+        // For now, let's keep it simple: If specific tier fails, we throw. 
+        // Complex fallback hierarchies might confuse the billing logic.
+        throw e;
       }
 
       return json({ text }, 200, cors);
@@ -80,93 +88,78 @@ export default {
   },
 };
 
-async function ocrWithGemini(base64Image, mimeType, apiKey) {
+async function ocrWithGemini(base64Image, mimeType, apiKey, model = "gemini-1.5-flash") {
   if (!apiKey) throw new Error("API key missing");
-
-  // Vision models only (gemini-pro does not support images)
-  const models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-  ];
 
   let lastError = "No vision models available";
   let globalRetries = 2; // 3 total attempts
 
   while (globalRetries >= 0) {
+    // Revert to v1beta as v1 is failing for gemini-1.5-flash in some regions/configs
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    for (const model of models) {
-      // Revert to v1beta as v1 is failing for gemini-1.5-flash in some regions/configs
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const requestBody = {
+      contents: [{
+        parts: [
+          {
+            text: `
+            You are a STRICT OCR engine for English text.
+            
+            YOUR TASK: Extract the text from the image.
+            
+            RULES:
+            1. ONLY output words that are clearly legible.
+            2. DO NOT hallucinate or invent words. If text is blurry or ambiguous, IGNORE it.
+            3. Filter out non-word characters and random noise (e.g. "gfliiiiziiiits" is NOT a word).
+            4. If words are concatenated (e.g. "isit"), split them ONLY if they form commonly used English words.
+            5. Ignore 1-letter words (except "a" and "I").
+            
+            OUTPUT FORMAT:
+            - A clean JSON Array of strings. 
+            - Example: ["hello", "world", "this", "is", "text"]
+          `},
+          { inline_data: { mime_type: mimeType, data: base64Image } }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.0,
+        maxOutputTokens: 8192,
+      }
+    };
 
-      const requestBody = {
-        contents: [{
-          parts: [
-            {
-              text: `
-              You are an expert OCR engine specializing in English language learning materials.
-              
-              YOUR TASK: Extract all legible English words from this image.
-              
-              CRITICAL PROBLEMS TO SOLVE: 
-              1. FONT VARIATIONS: The image may use different fonts (serif, sans-serif, handwriting, decorative). You must be robust to these styles.
-                 - Distinguish similar characters (like 'l' vs '1' vs 'I') by using word context.
-              2. SPACING ISSUES: Standard OCR often reads "is it" as "isit", or "to do" as "todo".
-                 - YOU MUST FIX THIS.
-
-              STEP-BY-STEP INSTRUCTION:
-              1. Scan the image for text, adapting to any font style used.
-              2. SELF-CORRECTION: Look at every word you found. 
-                 - If you see "isit", SPLIT it into "is", "it".
-                 - If you see "tome", SPLIT it into "to", "me".
-                 - If you see "gohome", SPLIT it into "go", "home".
-                 - Ask yourself: "Is this a real valid English word, or two words stuck together?"
-              3. Filter out noise (random letters, page numbers, UI icons).
-              4. Lowercase all words.
-              5. Output the final refined list as a JSON Array.
-
-              OUTPUT FORMAT:
-              - ONLY a valid JSON Array of strings.
-              - Example: ["is", "it", "time", "to", "go"]
-              - NO markdown formatting.
-            `},
-            { inline_data: { mime_type: mimeType, data: base64Image } }
+    try {
+      // Standard fetch to allow immediate failover on error
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...requestBody,
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
           ]
-        }]
-      };
+        })
+      });
 
-      try {
-        // Standard fetch to allow immediate failover on error
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...requestBody,
-            safetySettings: [
-              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
-          })
-        });
-
-        const data = await response.json();
-        if (data.error) {
-          // Failover
-          lastError = `${model}: ${data.error.message}`;
-          continue;
-        }
-
+      const data = await response.json();
+      if (data.error) {
+        // Failover
+        lastError = `${model}: ${data.error.message}`;
+        // If 429, maybe breaks loop, but we have global retries
+        // throw new Error(lastError); 
+      } else {
         const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (rawText) {
           // Clean up potential markdown formatting if Gemini ignores instructions
           const cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
           return cleanText;
         }
-
-      } catch (e) {
-        lastError = e.message;
       }
+
+    } catch (e) {
+      lastError = e.message;
     }
 
     // Global retry logic with backoff

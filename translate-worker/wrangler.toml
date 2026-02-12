@@ -8,3 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [ai]
 binding = "AI"
+
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "39959b76a262467bb91378f24590f4c7"

@@ -39,6 +39,33 @@ export default {
 
                 if (!words.length) return json({ translated: {} }, 200, cors);
 
+                // ---------------------------------------------------------
+                // RATE LIMIT CHECK (50,000 words/day)
+                // ---------------------------------------------------------
+                try {
+                    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+                    const limitKey = `translate_words_${today}`;
+
+                    let currentUsage = 0;
+                    const val = await env.LIMITS.get(limitKey);
+                    if (val) currentUsage = parseInt(val);
+
+                    // Check if limit exceeded
+                    if (currentUsage >= 50000) {
+                        return json({ error: "Daily Translation Limit Exceeded (50,000 words)" }, 429, cors);
+                    }
+
+                    // Increment usage (optimistic)
+                    // We increment by the number of words requested
+                    const newUsage = currentUsage + words.length;
+                    ctx.waitUntil(env.LIMITS.put(limitKey, newUsage.toString()));
+
+                } catch (err) {
+                    console.error("Rate Limit Error:", err);
+                    // Continue even if KV fails to avoid downtime
+                }
+                // ---------------------------------------------------------
+
                 const translations = await translateBatchWithGemini(words, env.GEMINI_API_KEY, ctx, request);
                 return json({ translated: translations }, 200, cors);
             }
