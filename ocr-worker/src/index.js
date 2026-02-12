@@ -110,10 +110,12 @@ async function ocrWithGemini(base64Image, mimeType, apiKey) {
               2. DO NOT include any markdown formatting. Just the raw JSON array.
               3. **CRITICAL:** Ignore words that are cut off at the edges of the image or partially visible.
               4. **CRITICAL:** Ignore random letters, noise, or blurry text that is not a clear English word.
-              5. Correct obvious OCR errors (e.g. '1' for 'l', '0' for 'O') based on English context.
-              6. Ignore non-text elements, UI icons, page numbers, headers, footers.
-              7. Convert all text to lowercase.
-              8. Do not include punctuation within words unless part of the word (like "don't").
+              5. **CRITICAL:** DO NOT concatenate short words. "is it" must be ["is", "it"], NOT ["isit"].
+              6. Treat 2-letter words (is, am, to, in, at, on) as valid words if they are clear.
+              7. Correct obvious OCR errors (e.g. '1' for 'l', '0' for 'O') based on English context.
+              8. Ignore non-text elements, UI icons, page numbers, headers, footers.
+              9. Convert all text to lowercase.
+              10. Do not include punctuation within words unless part of the word (like "don't").
             `},
             { inline_data: { mime_type: mimeType, data: base64Image } }
           ]
