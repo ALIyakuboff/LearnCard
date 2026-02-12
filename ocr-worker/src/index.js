@@ -45,24 +45,19 @@ export default {
           console.error("KV Get Error:", kvErr);
         }
 
-        // TIERED LOGIC (NEW)
-        // 0   - 100: Gemini 1.5 Pro (Paid)
-        // 101 - 150: Gemini 1.5 Pro (Free)
-        // 151 +    : Gemini 1.5 Flash (Paid - Cheaper)
+        // TIERED LOGIC (NEW - 2026-02-12)
+        // 0   - 50 : Gemini 1.5 Pro (Free)
+        // 51  +    : Gemini 1.5 Flash (Paid - Cheaper)
 
         let apiKey = env.GEMINI_API_KEY; // Default to Paid
-        let model = "gemini-1.5-pro";    // Default to Pro
+        let model = "gemini-1.5-flash";  // Default to Flash
 
-        if (currentUsage < 100) {
-          // Case 1: 0-100 (Paid Pro)
-          apiKey = env.GEMINI_API_KEY;
-          model = "gemini-1.5-pro";
-        } else if (currentUsage >= 100 && currentUsage < 150) {
-          // Case 2: 101-150 (Free Pro)
+        if (currentUsage < 50) {
+          // Case 1: 0-50 (Free Pro)
           apiKey = env.GEMINI_API_KEY_FREE;
           model = "gemini-1.5-pro";
         } else {
-          // Case 3: 151+ (Paid Flash - 10x Cheaper)
+          // Case 2: 51+ (Paid Flash - 10x Cheaper)
           apiKey = env.GEMINI_API_KEY;
           model = "gemini-1.5-flash";
         }
